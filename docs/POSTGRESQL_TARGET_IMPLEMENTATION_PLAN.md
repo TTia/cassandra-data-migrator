@@ -565,10 +565,10 @@ src/main/scala/com/datastax/cdm/job/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can migrate data from Cassandra to PostgreSQL
-- [ ] Features work (ConstantColumns, ExplodeMap, ExtractJson)
-- [ ] Rate limiting applies to PostgreSQL writes
-- [ ] Progress tracking works correctly
+- [x] Can migrate data from Cassandra to PostgreSQL
+- [x] Features work (ConstantColumns, ExplodeMap, ExtractJson)
+- [x] Rate limiting applies to PostgreSQL writes
+- [x] Progress tracking works correctly
 
 ### Phase 4: Complex Type Support (Week 7)
 
