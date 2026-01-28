@@ -646,14 +646,28 @@ docs/
     <optional>true</optional>
 </dependency>
 
-<!-- Testing -->
+<!-- Testing: Testcontainers with TimescaleDB -->
 <dependency>
-    <groupId>io.zonky.test</groupId>
-    <artifactId>embedded-postgres</artifactId>
-    <version>2.0.6</version>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>testcontainers</artifactId>
+    <version>1.19.3</version>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>postgresql</artifactId>
+    <version>1.19.3</version>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>junit-jupiter</artifactId>
+    <version>1.19.3</version>
     <scope>test</scope>
 </dependency>
 ```
+
+**TimescaleDB Docker Image:** `timescale/timescaledb:latest-pg16`
 
 ---
 
@@ -696,37 +710,49 @@ docs/
 
 ### 7.2 Integration Tests
 
-Using embedded PostgreSQL:
+Using Testcontainers with TimescaleDB:
 
 ```java
-@Test
-public void testPrimitiveMigration() {
-    // Migrate INT, TEXT, TIMESTAMP, UUID columns
-}
+@Testcontainers
+class CassandraToPostgresIntegrationTest {
 
-@Test
-public void testCollectionMigration() {
-    // Migrate LIST, SET, MAP columns
-}
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+            DockerImageName.parse("timescale/timescaledb:latest-pg16")
+                    .asCompatibleSubstituteFor("postgres"))
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test");
 
-@Test
-public void testUDTMigration() {
-    // Migrate User-Defined Types to JSONB
-}
+    @Test
+    void testPrimitiveMigration() {
+        // Migrate INT, TEXT, TIMESTAMP, UUID columns
+    }
 
-@Test
-public void testUpsertConflictResolution() {
-    // Test ON CONFLICT DO UPDATE behavior
-}
+    @Test
+    void testCollectionMigration() {
+        // Migrate LIST, SET, MAP columns
+    }
 
-@Test
-public void testBatchExecution() {
-    // Test various batch sizes and transaction boundaries
-}
+    @Test
+    void testUDTMigration() {
+        // Migrate User-Defined Types to JSONB
+    }
 
-@Test
-public void testLargeDatasetMigration() {
-    // Performance test with 1M+ records
+    @Test
+    void testUpsertConflictResolution() {
+        // Test ON CONFLICT DO UPDATE behavior
+    }
+
+    @Test
+    void testBatchExecution() {
+        // Test various batch sizes and transaction boundaries
+    }
+
+    @Test
+    void testLargeDatasetMigration() {
+        // Performance test with 1M+ records
+    }
 }
 ```
 
