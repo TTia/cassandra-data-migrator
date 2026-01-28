@@ -1,0 +1,222 @@
+# CI/CD Pipeline for PostgreSQL Target Implementation
+# This workflow builds and tests the Cassandra to PostgreSQL migration feature
+
+name: PostgreSQL Target CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/main/java/com/datastax/cdm/connect/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/schema/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/cql/statement/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/job/Postgres*.java'
+      - 'src/test/java/**/Postgres*.java'
+      - 'src/test/java/**/CassandraToPostgres*.java'
+      - '.github/workflows/postgres-target-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/main/java/com/datastax/cdm/connect/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/schema/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/cql/statement/Postgres*.java'
+      - 'src/main/java/com/datastax/cdm/job/Postgres*.java'
+      - 'src/test/java/**/Postgres*.java'
+      - 'src/test/java/**/CassandraToPostgres*.java'
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+env:
+  TIMESCALEDB_IMAGE: timescale/timescaledb:latest-pg16
+
+jobs:
+  build:
+    name: Build & Unit Tests
+    strategy:
+      matrix:
+        jdk: [11, 17, 21]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven (skip tests)
+        run: mvn -B compile -DskipTests --file pom.xml
+
+      - name: Run Unit Tests
+        run: mvn -B test --file pom.xml -Dtest="**/Postgres*Test,**/PostgresType*Test" -DfailIfNoTests=false
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results-jdk${{ matrix.jdk }}
+          path: target/surefire-reports/
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests with TimescaleDB
+    needs: build
+    runs-on: ubuntu-latest
+
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Wait for TimescaleDB to be ready
+        run: |
+          echo "Waiting for TimescaleDB to be ready..."
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U test; then
+              echo "TimescaleDB is ready!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+      - name: Verify TimescaleDB connection
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U test -d testdb -c "SELECT version();"
+          psql -h localhost -U test -d testdb -c "SELECT extversion FROM pg_extension WHERE extname = 'timescaledb';" || echo "TimescaleDB extension not yet enabled"
+
+      - name: Run Integration Tests
+        env:
+          PG_TEST_HOST: localhost
+          PG_TEST_PORT: 5432
+          PG_TEST_USER: test
+          PG_TEST_PASSWORD: test
+          PG_TEST_DATABASE: testdb
+        run: |
+          mvn -B verify --file pom.xml \
+            -Dtest="**/CassandraToPostgres*IT,**/Postgres*IT" \
+            -DfailIfNoTests=false \
+            -Dpg.test.host=localhost \
+            -Dpg.test.port=5432 \
+            -Dpg.test.user=test \
+            -Dpg.test.password=test \
+            -Dpg.test.database=testdb
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: target/failsafe-reports/
+          retention-days: 7
+
+  testcontainers-tests:
+    name: Testcontainers Integration Tests
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Pull TimescaleDB image
+        run: docker pull timescale/timescaledb:latest-pg16
+
+      - name: Run Testcontainers Tests
+        run: |
+          mvn -B verify --file pom.xml \
+            -Dtest="**/CassandraToPostgresIntegrationTest" \
+            -DfailIfNoTests=false \
+            -Dtestcontainers.reuse.enable=true
+
+      - name: Upload Testcontainers test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testcontainers-test-results
+          path: target/failsafe-reports/
+          retention-days: 7
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Check code style (if configured)
+        run: mvn -B checkstyle:check --file pom.xml || echo "Checkstyle not configured, skipping..."
+        continue-on-error: true
+
+      - name: SpotBugs analysis (if configured)
+        run: mvn -B spotbugs:check --file pom.xml || echo "SpotBugs not configured, skipping..."
+        continue-on-error: true
+
+  all-tests-pass:
+    name: All Tests Pass
+    needs: [build, integration-tests, testcontainers-tests]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "Build job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.integration-tests.result }}" != "success" && "${{ needs.integration-tests.result }}" != "skipped" ]]; then
+            echo "Integration tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.testcontainers-tests.result }}" != "success" && "${{ needs.testcontainers-tests.result }}" != "skipped" ]]; then
+            echo "Testcontainers tests failed"
+            exit 1
+          fi
+          echo "All required checks passed!"

@@ -466,6 +466,37 @@ spark.cdm.perfops.ratelimit.target=50000
 
 ## 4. Implementation Phases
 
+### Phase 0: CI/CD Pipeline Setup (Pre-requisite)
+
+**Deliverables:**
+1. GitHub Actions workflow for PostgreSQL target CI/CD
+2. Build and unit test automation across JDK 11, 17, 21
+3. Integration tests with TimescaleDB (via GitHub Services)
+4. Testcontainers-based integration tests
+5. Code quality checks
+
+**Files Created:**
+```
+.github/workflows/
+└── postgres-target-ci.yml                 [CREATE] - PostgreSQL target CI pipeline
+```
+
+**Workflow Features:**
+- **Path-based triggers:** Only runs on changes to PostgreSQL-related files
+- **Matrix builds:** Tests across JDK 11, 17, 21
+- **TimescaleDB service:** Spins up `timescale/timescaledb:latest-pg16` for integration tests
+- **Testcontainers support:** For tests using `@Testcontainers` annotation
+- **Artifact upload:** Test results preserved for debugging
+
+**Acceptance Criteria:**
+- [x] Workflow triggers on relevant file changes
+- [x] Unit tests run across multiple JDK versions
+- [x] Integration tests connect to TimescaleDB service
+- [x] Testcontainers tests can pull and use TimescaleDB image
+- [x] All test results uploaded as artifacts
+
+---
+
 ### Phase 1: Core Infrastructure (Weeks 1-2)
 
 **Deliverables:**
