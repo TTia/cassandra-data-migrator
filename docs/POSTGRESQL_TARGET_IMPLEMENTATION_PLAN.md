@@ -586,10 +586,10 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] LIST columns migrate to PostgreSQL ARRAY
-- [ ] SET columns migrate to PostgreSQL ARRAY (deduplicated)
-- [ ] MAP columns migrate to JSONB
-- [ ] UDT columns migrate to JSONB
+- [x] LIST columns migrate to PostgreSQL ARRAY
+- [x] SET columns migrate to PostgreSQL ARRAY (deduplicated)
+- [x] MAP columns migrate to JSONB
+- [x] UDT columns migrate to JSONB
 
 ### Phase 5: Validation & Diff Support (Weeks 8-9)
 
@@ -608,9 +608,9 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can validate migrated data matches source
-- [ ] Diff reports show missing/different records
-- [ ] Supports primary key lookups on PostgreSQL
+- [x] Can validate migrated data matches source
+- [x] Diff reports show missing/different records
+- [x] Supports primary key lookups on PostgreSQL
 
 ### Phase 6: Testing & Documentation (Week 10)
 
