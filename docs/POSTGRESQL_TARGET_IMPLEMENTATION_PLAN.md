@@ -520,10 +520,10 @@ src/main/java/com/datastax/cdm/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can connect to PostgreSQL with connection pooling
-- [ ] Can discover table schema from information_schema
-- [ ] Can map all primitive Cassandra types to PostgreSQL
-- [ ] Unit tests pass with >80% coverage
+- [x] Can connect to PostgreSQL with connection pooling
+- [x] Can discover table schema from information_schema
+- [x] Can map all primitive Cassandra types to PostgreSQL
+- [x] Unit tests pass with >80% coverage
 
 ### Phase 2: Statement Building & Execution (Weeks 3-4)
 
