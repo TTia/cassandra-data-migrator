@@ -540,11 +540,11 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can generate correct INSERT statements
-- [ ] Can generate correct UPSERT (ON CONFLICT) statements
-- [ ] Batch execution works with configurable sizes
-- [ ] Transactions commit/rollback correctly
-- [ ] Retry logic handles transient failures
+- [x] Can generate correct INSERT statements
+- [x] Can generate correct UPSERT (ON CONFLICT) statements
+- [x] Batch execution works with configurable sizes
+- [x] Transactions commit/rollback correctly
+- [x] Retry logic handles transient failures
 
 ### Phase 3: Job Session Integration (Weeks 5-6)
 
