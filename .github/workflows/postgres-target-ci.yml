@@ -6,24 +6,9 @@ name: PostgreSQL Target CI
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'src/main/java/com/datastax/cdm/connect/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/schema/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/cql/statement/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/job/Postgres*.java'
-      - 'src/test/java/**/Postgres*.java'
-      - 'src/test/java/**/CassandraToPostgres*.java'
-      - '.github/workflows/postgres-target-ci.yml'
   push:
     branches:
-      - main
-    paths:
-      - 'src/main/java/com/datastax/cdm/connect/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/schema/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/cql/statement/Postgres*.java'
-      - 'src/main/java/com/datastax/cdm/job/Postgres*.java'
-      - 'src/test/java/**/Postgres*.java'
-      - 'src/test/java/**/CassandraToPostgres*.java'
+      - '**'  # Run on all branches
 
 concurrency:
   group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
