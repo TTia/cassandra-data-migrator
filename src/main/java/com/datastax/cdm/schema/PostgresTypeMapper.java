@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.postgresql.util.PGobject;
 import org.slf4j.Logger;
@@ -179,11 +180,13 @@ public class PostgresTypeMapper {
         }
 
         // Handle collection types
-        if (cassandraType instanceof ListType listType) {
+        if (cassandraType instanceof ListType) {
+            ListType listType = (ListType) cassandraType;
             String elementPgType = getArrayElementTypeName(listType.getElementType());
             return new PostgresType(elementPgType + "[]", Types.ARRAY, java.sql.Array.class, elementPgType);
         }
-        if (cassandraType instanceof SetType setType) {
+        if (cassandraType instanceof SetType) {
+            SetType setType = (SetType) cassandraType;
             String elementPgType = getArrayElementTypeName(setType.getElementType());
             return new PostgresType(elementPgType + "[]", Types.ARRAY, java.sql.Array.class, elementPgType);
         }
@@ -225,44 +228,46 @@ public class PostgresTypeMapper {
         }
 
         // Handle primitive types that need conversion
-        if (cassandraValue instanceof ByteBuffer byteBuffer) {
-            return convertBlob(byteBuffer);
+        if (cassandraValue instanceof ByteBuffer) {
+            return convertBlob((ByteBuffer) cassandraValue);
         }
-        if (cassandraValue instanceof Instant instant) {
-            return convertTimestamp(instant);
+        if (cassandraValue instanceof Instant) {
+            return convertTimestamp((Instant) cassandraValue);
         }
-        if (cassandraValue instanceof CqlDuration duration) {
-            return convertDuration(duration);
+        if (cassandraValue instanceof CqlDuration) {
+            return convertDuration((CqlDuration) cassandraValue);
         }
-        if (cassandraValue instanceof InetAddress inetAddress) {
-            return convertInet(inetAddress);
+        if (cassandraValue instanceof InetAddress) {
+            return convertInet((InetAddress) cassandraValue);
         }
-        if (cassandraValue instanceof BigInteger bigInteger) {
-            return new BigDecimal(bigInteger);
+        if (cassandraValue instanceof BigInteger) {
+            return new BigDecimal((BigInteger) cassandraValue);
         }
 
         // Handle collection types
-        if (cassandraValue instanceof List<?> list && fromType instanceof ListType listType) {
-            return convertList(list, connection, listType.getElementType());
+        if (cassandraValue instanceof List && fromType instanceof ListType) {
+            ListType listType = (ListType) fromType;
+            return convertList((List<?>) cassandraValue, connection, listType.getElementType());
         }
-        if (cassandraValue instanceof Set<?> set && fromType instanceof SetType setType) {
-            return convertSet(set, connection, setType.getElementType());
+        if (cassandraValue instanceof Set && fromType instanceof SetType) {
+            SetType setType = (SetType) fromType;
+            return convertSet((Set<?>) cassandraValue, connection, setType.getElementType());
         }
-        if (cassandraValue instanceof Map<?, ?> map) {
-            return convertMap(map);
+        if (cassandraValue instanceof Map) {
+            return convertMap((Map<?, ?>) cassandraValue);
         }
 
         // Handle UDT and Tuple
-        if (cassandraValue instanceof UdtValue udtValue) {
-            return convertUDT(udtValue);
+        if (cassandraValue instanceof UdtValue) {
+            return convertUDT((UdtValue) cassandraValue);
         }
-        if (cassandraValue instanceof TupleValue tupleValue) {
-            return convertTuple(tupleValue);
+        if (cassandraValue instanceof TupleValue) {
+            return convertTuple((TupleValue) cassandraValue);
         }
 
         // Handle Vector type
-        if (fromType instanceof VectorType && cassandraValue instanceof List<?> list) {
-            return convertVector(list);
+        if (fromType instanceof VectorType && cassandraValue instanceof List) {
+            return convertVector((List<?>) cassandraValue);
         }
 
         // Return as-is for primitive types that don't need conversion
@@ -337,7 +342,7 @@ public class PostgresTypeMapper {
         UserDefinedType udtType = udt.getType();
         List<String> fieldNames = udtType.getFieldNames().stream()
                 .map(id -> id.asInternal())
-                .toList();
+                .collect(Collectors.toList());
 
         for (int i = 0; i < fieldNames.size(); i++) {
             String fieldName = fieldNames.get(i);
@@ -557,20 +562,20 @@ public class PostgresTypeMapper {
         }
 
         // Handle nested collections/maps as JSONB strings
-        if (element instanceof Map<?, ?> || element instanceof UdtValue
-                || element instanceof List<?> || element instanceof Set<?>) {
+        if (element instanceof Map || element instanceof UdtValue
+                || element instanceof List || element instanceof Set) {
             return gson.toJson(convertValueForJson(element));
         }
 
         // Handle special types
-        if (element instanceof ByteBuffer byteBuffer) {
-            return convertBlob(byteBuffer);
+        if (element instanceof ByteBuffer) {
+            return convertBlob((ByteBuffer) element);
         }
-        if (element instanceof Instant instant) {
-            return convertTimestamp(instant);
+        if (element instanceof Instant) {
+            return convertTimestamp((Instant) element);
         }
-        if (element instanceof BigInteger bigInteger) {
-            return new BigDecimal(bigInteger);
+        if (element instanceof BigInteger) {
+            return new BigDecimal((BigInteger) element);
         }
 
         return element;
@@ -583,7 +588,8 @@ public class PostgresTypeMapper {
         if (value == null) {
             return null;
         }
-        if (value instanceof Map<?, ?> map) {
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
             Map<String, Object> converted = new HashMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 String key = entry.getKey() != null ? entry.getKey().toString() : "null";
@@ -591,32 +597,36 @@ public class PostgresTypeMapper {
             }
             return converted;
         }
-        if (value instanceof List<?> list) {
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
             List<Object> converted = new ArrayList<>();
             for (Object element : list) {
                 converted.add(convertValueForJson(element));
             }
             return converted;
         }
-        if (value instanceof Set<?> set) {
+        if (value instanceof Set) {
+            Set<?> set = (Set<?>) value;
             List<Object> converted = new ArrayList<>();
             for (Object element : set) {
                 converted.add(convertValueForJson(element));
             }
             return converted;
         }
-        if (value instanceof UdtValue udtValue) {
+        if (value instanceof UdtValue) {
+            UdtValue udtValue = (UdtValue) value;
             Map<String, Object> fields = new HashMap<>();
             UserDefinedType udtType = udtValue.getType();
             List<String> fieldNames = udtType.getFieldNames().stream()
                     .map(id -> id.asInternal())
-                    .toList();
+                    .collect(Collectors.toList());
             for (int i = 0; i < fieldNames.size(); i++) {
                 fields.put(fieldNames.get(i), convertValueForJson(udtValue.getObject(i)));
             }
             return fields;
         }
-        if (value instanceof TupleValue tupleValue) {
+        if (value instanceof TupleValue) {
+            TupleValue tupleValue = (TupleValue) value;
             List<Object> elements = new ArrayList<>();
             int size = tupleValue.getType().getComponentTypes().size();
             for (int i = 0; i < size; i++) {
@@ -624,13 +634,13 @@ public class PostgresTypeMapper {
             }
             return elements;
         }
-        if (value instanceof ByteBuffer byteBuffer) {
+        if (value instanceof ByteBuffer) {
             // Convert to base64 for JSON
-            byte[] bytes = convertBlob(byteBuffer);
+            byte[] bytes = convertBlob((ByteBuffer) value);
             return java.util.Base64.getEncoder().encodeToString(bytes);
         }
-        if (value instanceof Instant instant) {
-            return instant.toString();
+        if (value instanceof Instant) {
+            return ((Instant) value).toString();
         }
         if (value instanceof UUID || value instanceof BigInteger || value instanceof BigDecimal
                 || value instanceof InetAddress || value instanceof CqlDuration) {
