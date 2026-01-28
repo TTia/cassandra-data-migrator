@@ -10,9 +10,11 @@ This document outlines the implementation plan for extending the Cassandra Data 
 |--------|------------|-------|
 | Architecture Extensibility | **Excellent** | Clear interfaces and factory patterns |
 | Source Pipeline Reuse | **100%** | No changes needed to Cassandra read path |
-| Type System Mapping | **95% Coverage** | Most types have direct PostgreSQL equivalents |
+| Type System Mapping | **100% Coverage** | All used types have direct PostgreSQL equivalents |
 | Batch Execution | **Adaptable** | JDBC batch APIs are mature |
-| Feature Compatibility | **Partial** | Some features need adaptation (TTL, counters) |
+| Feature Compatibility | **Full** | All required features supported |
+
+> **Note:** This plan excludes TTL and Counter support as these features are not used in the source Cassandra cluster.
 
 ---
 
@@ -242,7 +244,6 @@ public class PostgresTypeMapper {
 | DURATION | INTERVAL | Types.OTHER | PGInterval |
 | BLOB | BYTEA | Types.BINARY | byte[] |
 | INET | INET | Types.OTHER | PGobject |
-| COUNTER | BIGINT | Types.BIGINT | Long |
 | LIST<T> | ARRAY[T] | Types.ARRAY | Array |
 | SET<T> | ARRAY[T] | Types.ARRAY | Array |
 | MAP<K,V> | JSONB | Types.OTHER | PGobject |
@@ -296,12 +297,6 @@ ON CONFLICT (pk1, pk2) DO UPDATE SET
     col3 = EXCLUDED.col3,
     col4 = EXCLUDED.col4,
     ...
-
--- Counter simulation (increment pattern)
-INSERT INTO schema.table (pk1, pk2, counter_col)
-VALUES (?, ?, ?)
-ON CONFLICT (pk1, pk2) DO UPDATE SET
-    counter_col = schema.table.counter_col + EXCLUDED.counter_col
 ```
 
 #### 2.2.5 PostgresCopyJobSession
@@ -420,10 +415,6 @@ public static final String PG_ISOLATION_LEVEL = "spark.cdm.connect.target.postgr
 public static final String PG_MAP_TO_JSONB = "spark.cdm.connect.target.postgres.mapToJsonb";  // true/false
 public static final String PG_UDT_TO_JSONB = "spark.cdm.connect.target.postgres.udtToJsonb";  // true/false
 public static final String PG_ARRAY_TYPE_PREFIX = "spark.cdm.connect.target.postgres.array.";
-
-// TTL Handling (PostgreSQL doesn't have native TTL)
-public static final String PG_TTL_COLUMN = "spark.cdm.connect.target.postgres.ttlColumn";  // Optional expiry column
-public static final String PG_WRITETIME_COLUMN = "spark.cdm.connect.target.postgres.writetimeColumn";  // Optional
 ```
 
 ### 3.2 Example Configuration File
@@ -464,10 +455,6 @@ spark.cdm.connect.target.postgres.isolationLevel=READ_COMMITTED
 # Type Mapping Options
 spark.cdm.connect.target.postgres.mapToJsonb=true
 spark.cdm.connect.target.postgres.udtToJsonb=true
-
-# Optional: TTL/Writetime preservation
-spark.cdm.connect.target.postgres.ttlColumn=expires_at
-spark.cdm.connect.target.postgres.writetimeColumn=last_modified
 
 # Performance
 spark.cdm.perfops.numParts=5000
@@ -552,14 +539,12 @@ src/main/scala/com/datastax/cdm/job/
 - [ ] Rate limiting applies to PostgreSQL writes
 - [ ] Progress tracking works correctly
 
-### Phase 4: Complex Type Support (Weeks 7-8)
+### Phase 4: Complex Type Support (Week 7)
 
 **Deliverables:**
 1. Collection type support (LIST → ARRAY, SET → ARRAY)
 2. MAP → JSONB conversion
 3. UDT → JSONB conversion
-4. Counter table support
-5. TTL/Writetime column mapping
 
 **Files to Modify:**
 ```
@@ -574,10 +559,8 @@ src/main/java/com/datastax/cdm/cql/statement/
 - [ ] SET columns migrate to PostgreSQL ARRAY (deduplicated)
 - [ ] MAP columns migrate to JSONB
 - [ ] UDT columns migrate to JSONB
-- [ ] Counter tables migrate with increment semantics
-- [ ] Optional TTL/Writetime columns populate correctly
 
-### Phase 5: Validation & Diff Support (Weeks 9-10)
+### Phase 5: Validation & Diff Support (Weeks 8-9)
 
 **Deliverables:**
 1. PostgresDiffJobSession for data validation
@@ -598,7 +581,7 @@ src/main/java/com/datastax/cdm/cql/statement/
 - [ ] Diff reports show missing/different records
 - [ ] Supports primary key lookups on PostgreSQL
 
-### Phase 6: Testing & Documentation (Weeks 11-12)
+### Phase 6: Testing & Documentation (Week 10)
 
 **Deliverables:**
 1. Integration tests with embedded PostgreSQL
@@ -682,24 +665,22 @@ docs/
 |------|-------------|--------|------------|
 | Type conversion data loss | Medium | High | Comprehensive testing, validation mode, logging warnings |
 | Performance degradation | Medium | Medium | Batch tuning, connection pooling, benchmarking |
-| Counter semantics mismatch | High | Medium | Document limitations, provide increment-based alternative |
-| TTL feature loss | High | Low | Optional expiry column, application-level TTL management |
 | Large collection handling | Medium | Medium | JSONB for very large collections, configurable thresholds |
+| Network/connection failures | Medium | Low | Retry logic with exponential backoff, connection pooling |
 
 ### 6.2 Feature Compatibility Matrix
 
 | Feature | Cassandra Target | PostgreSQL Target | Notes |
 |---------|------------------|-------------------|-------|
 | Basic migration | Full | Full | Core functionality |
-| TTL preservation | Full | Partial | Requires additional expiry column |
-| Writetime preservation | Full | Partial | Requires additional timestamp column |
-| Counter tables | Full | Adapted | Uses increment-on-conflict pattern |
 | ConstantColumns | Full | Full | No changes needed |
 | ExplodeMap | Full | Full | Works with JSONB or separate columns |
 | ExtractJson | Full | Full | No changes needed |
 | OriginFilter | Full | Full | No changes needed |
 | Validation/Diff | Full | Full | New implementation needed |
 | Track/Resume | Full | Full | Uses same tracking mechanism |
+
+> **Excluded Features:** TTL and Counter tables are not supported as they are not used in the source cluster.
 
 ---
 
@@ -810,15 +791,8 @@ CREATE TABLE public.users (
     profile JSONB,
     tags TEXT[],
     login_history TIMESTAMP WITH TIME ZONE[],
-    address JSONB,
-    -- Optional TTL/Writetime columns
-    cdm_ttl_expires_at TIMESTAMP WITH TIME ZONE,
-    cdm_writetime TIMESTAMP WITH TIME ZONE
+    address JSONB
 );
-
--- Index for expiry-based cleanup (if using TTL column)
-CREATE INDEX idx_users_expires ON public.users (cdm_ttl_expires_at)
-WHERE cdm_ttl_expires_at IS NOT NULL;
 ```
 
 ### 9.2 Error Handling Strategy
@@ -860,12 +834,12 @@ The Cassandra Data Migrator can be effectively extended to support PostgreSQL as
 - Reuse existing transformation features (ConstantColumns, ExplodeMap, ExtractJson)
 - Reuse Spark-based distribution and parallelization
 - Reuse rate limiting and progress tracking
+- No TTL or Counter complexity (not used in source cluster)
 
 **Key Challenges:**
-- TTL has no direct PostgreSQL equivalent (mitigated with optional expiry columns)
-- Counter semantics differ (mitigated with increment-on-conflict pattern)
-- Complex types require JSONB conversion (well-supported approach)
+- Complex types (MAP, UDT) require JSONB conversion (well-supported approach)
+- Collection types require PostgreSQL ARRAY handling
 
-**Estimated Effort:** 10-12 weeks for complete implementation with testing and documentation.
+**Estimated Effort:** 8-9 weeks for complete implementation with testing and documentation.
 
 **Recommended Approach:** Start with Phase 1 (Core Infrastructure) to validate the architecture, then proceed incrementally through subsequent phases with regular testing and feedback cycles.
