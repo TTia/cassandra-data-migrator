@@ -69,8 +69,7 @@ public class PostgresUpsertStatementTest {
 
         // Setup origin table
         when(originTable.getColumnNames(false)).thenReturn(Arrays.asList("id", "name", "value"));
-        when(originTable.getColumnCqlTypes()).thenReturn(Arrays.asList(
-                DataTypes.UUID, DataTypes.TEXT, DataTypes.INT));
+        when(originTable.getColumnCqlTypes()).thenReturn(Arrays.asList(DataTypes.UUID, DataTypes.TEXT, DataTypes.INT));
 
         // Setup property helper with default values
         when(propertyHelper.getString(KnownProperties.PG_UPSERT_MODE)).thenReturn("upsert");
@@ -85,8 +84,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void constructor_createsInstance() {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         assertNotNull(statement);
         assertNotNull(statement.getInsertStatement());
@@ -95,8 +94,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void buildInsertStatement_correctFormat() {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         String sql = statement.getInsertStatement();
 
@@ -109,8 +108,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void buildUpsertStatement_correctFormat() {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         String sql = statement.getUpsertStatement();
 
@@ -156,8 +155,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void initialize_setsUpConnection() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         statement.initialize(connection);
 
@@ -179,16 +178,16 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void addToBatch_withoutInitialize_throwsException() {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         assertThrows(IllegalStateException.class, () -> statement.addToBatch(null));
     }
 
     @Test
     public void getCurrentBatchCount_initiallyZero() {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         assertEquals(0, statement.getCurrentBatchCount());
     }
@@ -205,8 +204,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void executeBatch_emptyBatch_returnsEmptyArray() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
 
         int[] results = statement.executeBatch();
@@ -216,8 +215,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void clearBatch_clearsCount() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
         statement.clearBatch();
 
@@ -226,8 +225,11 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void commit_commitsTransaction() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        // After initialize, autoCommit should be false for commit to work
+        when(connection.getAutoCommit()).thenReturn(false);
+
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
 
         statement.commit();
@@ -237,8 +239,11 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void rollback_rollsBackTransaction() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        // After initialize, autoCommit should be false for rollback to work
+        when(connection.getAutoCommit()).thenReturn(false);
+
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
 
         statement.rollback();
@@ -248,8 +253,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void close_closesStatement() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
 
         statement.close();
@@ -271,8 +276,8 @@ public class PostgresUpsertStatementTest {
 
     @Test
     public void setAutoCommit_setsOnConnection() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
         statement.initialize(connection);
 
         statement.setAutoCommit(true);
@@ -333,8 +338,8 @@ public class PostgresUpsertStatementTest {
         when(propertyHelper.getStringList(KnownProperties.PG_ON_CONFLICT_COLUMNS)).thenReturn(conflictCols);
         when(targetTable.getPrimaryKeyColumns()).thenReturn(Collections.singletonList("id"));
 
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(
-                targetTable, originTable, typeMapper, propertyHelper);
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
+                propertyHelper);
 
         String sql = statement.getUpsertStatement();
         assertTrue(sql.contains("ON CONFLICT (\"id\", \"name\")"));

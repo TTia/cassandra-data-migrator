@@ -32,8 +32,8 @@ import com.datastax.cdm.schema.CqlTable;
 import com.datastax.cdm.schema.PostgresTable;
 
 /**
- * Executes SELECT queries against PostgreSQL to fetch records by primary key.
- * Used for validation/diff operations to compare Cassandra data with PostgreSQL data.
+ * Executes SELECT queries against PostgreSQL to fetch records by primary key. Used for validation/diff operations to
+ * compare Cassandra data with PostgreSQL data.
  */
 public class PostgresSelectByPKStatement {
 
@@ -47,8 +47,10 @@ public class PostgresSelectByPKStatement {
     /**
      * Creates a new PostgresSelectByPKStatement.
      *
-     * @param targetTable the PostgreSQL target table
-     * @param originTable the Cassandra origin table (for column mapping)
+     * @param targetTable
+     *            the PostgreSQL target table
+     * @param originTable
+     *            the Cassandra origin table (for column mapping)
      */
     public PostgresSelectByPKStatement(PostgresTable targetTable, CqlTable originTable) {
         this.targetTable = targetTable;
@@ -62,10 +64,15 @@ public class PostgresSelectByPKStatement {
     /**
      * Gets a record from PostgreSQL by primary key.
      *
-     * @param connection the database connection
-     * @param pk         the enhanced primary key
+     * @param connection
+     *            the database connection
+     * @param pk
+     *            the enhanced primary key
+     *
      * @return a map of column name to value, or null if not found
-     * @throws SQLException if query fails
+     *
+     * @throws SQLException
+     *             if query fails
      */
     public Map<String, Object> getRecord(Connection connection, EnhancedPK pk) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(selectStatement)) {
@@ -83,14 +90,19 @@ public class PostgresSelectByPKStatement {
     /**
      * Checks if a record exists in PostgreSQL by primary key.
      *
-     * @param connection the database connection
-     * @param pk         the enhanced primary key
+     * @param connection
+     *            the database connection
+     * @param pk
+     *            the enhanced primary key
+     *
      * @return true if the record exists
-     * @throws SQLException if query fails
+     *
+     * @throws SQLException
+     *             if query fails
      */
     public boolean recordExists(Connection connection, EnhancedPK pk) throws SQLException {
-        String existsQuery = "SELECT 1 FROM " + targetTable.getQualifiedTableName() +
-                " WHERE " + buildWhereClause() + " LIMIT 1";
+        String existsQuery = "SELECT 1 FROM " + targetTable.getQualifiedTableName() + " WHERE " + buildWhereClause()
+                + " LIMIT 1";
 
         try (PreparedStatement stmt = connection.prepareStatement(existsQuery)) {
             bindPrimaryKey(stmt, pk);

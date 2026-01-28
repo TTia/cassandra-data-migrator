@@ -28,14 +28,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.datastax.cdm.connect.PostgresConnectionFactory;
-import com.datastax.cdm.cql.EnhancedSession;
 import com.datastax.cdm.cql.statement.OriginSelectByPartitionRangeStatement;
 import com.datastax.cdm.cql.statement.PostgresSelectByPKStatement;
 import com.datastax.cdm.cql.statement.PostgresUpsertStatement;
 import com.datastax.cdm.data.PKFactory;
 import com.datastax.cdm.data.Record;
-import com.datastax.cdm.feature.Featureset;
-import com.datastax.cdm.feature.Guardrail;
 import com.datastax.cdm.feature.TrackRun;
 import com.datastax.cdm.properties.KnownProperties;
 import com.datastax.cdm.properties.PropertyHelper;
@@ -46,17 +43,15 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.type.DataType;
-import com.datastax.oss.driver.shaded.guava.common.util.concurrent.RateLimiter;
 
 /**
- * Job session for validating data between Cassandra origin and PostgreSQL target.
- * Compares records and optionally auto-corrects missing or mismatched data.
+ * Job session for validating data between Cassandra origin and PostgreSQL target. Compares records and optionally
+ * auto-corrects missing or mismatched data.
  */
-public class PostgresDiffJobSession extends BaseJobSession {
+public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
 
     public Logger logger = LoggerFactory.getLogger(this.getClass().getName());
 
-    protected final EnhancedSession originSession;
     protected final PostgresConnectionFactory postgresConnectionFactory;
     protected final PostgresTable postgresTable;
     protected final PostgresTypeMapper typeMapper;
@@ -66,10 +61,6 @@ public class PostgresDiffJobSession extends BaseJobSession {
     protected final Boolean autoCorrectMissing;
     protected final Boolean autoCorrectMismatch;
 
-    protected Guardrail guardrailFeature;
-    protected TrackRun trackRunFeature;
-    protected long runId;
-
     // Column metadata for comparison
     private final List<String> targetColumnNames;
     private final List<String> originColumnNames;
@@ -78,14 +69,17 @@ public class PostgresDiffJobSession extends BaseJobSession {
     /**
      * Creates a new PostgresDiffJobSession.
      *
-     * @param originSession            the Cassandra origin session
-     * @param postgresConnectionFactory the PostgreSQL connection factory
-     * @param propHelper               the property helper
+     * @param originSession
+     *            the Cassandra origin session
+     * @param postgresConnectionFactory
+     *            the PostgreSQL connection factory
+     * @param propHelper
+     *            the property helper
      */
-    protected PostgresDiffJobSession(CqlSession originSession,
-            PostgresConnectionFactory postgresConnectionFactory,
+    protected PostgresDiffJobSession(CqlSession originSession, PostgresConnectionFactory postgresConnectionFactory,
             PropertyHelper propHelper) {
-        super(propHelper);
+        // Call parent with null targetSession since we use PostgreSQL via JDBC
+        super(originSession, null, propHelper);
 
         this.postgresConnectionFactory = postgresConnectionFactory;
         this.typeMapper = new PostgresTypeMapper();
@@ -96,15 +90,6 @@ public class PostgresDiffJobSession extends BaseJobSession {
 
         logger.info("PARAM -- Autocorrect Missing: {}", autoCorrectMissing);
         logger.info("PARAM -- Autocorrect Mismatch: {}", autoCorrectMismatch);
-
-        // Initialize rate limiters
-        rateLimiterOrigin = RateLimiter.create(propertyHelper.getInteger(KnownProperties.PERF_RATELIMIT_ORIGIN));
-        rateLimiterTarget = RateLimiter.create(propertyHelper.getInteger(KnownProperties.PERF_RATELIMIT_TARGET));
-
-        // Initialize origin Cassandra session
-        this.originSession = new EnhancedSession(propertyHelper, originSession, true);
-        CqlTable cqlTableOrigin = this.originSession.getCqlTable();
-        cqlTableOrigin.setFeatureMap(featureMap);
 
         // Initialize PostgreSQL target table
         this.postgresTable = new PostgresTable(propertyHelper);
@@ -117,15 +102,10 @@ public class PostgresDiffJobSession extends BaseJobSession {
         }
 
         // Initialize PKFactory and select statement
+        CqlTable cqlTableOrigin = this.originSession.getCqlTable();
         this.pkFactory = new PKFactory(propertyHelper, cqlTableOrigin, null);
         this.originSession.setPKFactory(pkFactory);
         this.selectByPKStatement = new PostgresSelectByPKStatement(postgresTable, cqlTableOrigin);
-
-        // Initialize guardrail
-        this.guardrailFeature = (Guardrail) cqlTableOrigin.getFeature(Featureset.GUARDRAIL_CHECK);
-        if (!guardrailFeature.initializeAndValidate(cqlTableOrigin, null)) {
-            throw new RuntimeException("Guardrail feature is not valid. Please check the configuration.");
-        }
 
         // Store column metadata for comparison
         this.targetColumnNames = postgresTable.getColumnNames();
@@ -135,13 +115,12 @@ public class PostgresDiffJobSession extends BaseJobSession {
         logger.info("PostgresDiffJobSession initialized:");
         logger.info("  Origin: {}", cqlTableOrigin.getKeyspaceTable());
         logger.info("  Target: {}", postgresTable.getQualifiedTableName());
-        logger.info("  CQL -- origin select: {}", this.originSession.getOriginSelectByPartitionRangeStatement().getCQL());
+        logger.info("  CQL -- origin select: {}",
+                this.originSession.getOriginSelectByPartitionRangeStatement().getCQL());
         logger.info("  SQL -- target select: {}", selectByPKStatement.getSelectStatement());
     }
 
-    /**
-     * Process a partition range with tracking.
-     */
+    @Override
     public void processPartitionRange(PartitionRange range, TrackRun trackRunFeature, long runId) {
         this.trackRunFeature = trackRunFeature;
         this.runId = runId;
@@ -165,8 +144,8 @@ public class PostgresDiffJobSession extends BaseJobSession {
         try (Connection connection = postgresConnectionFactory.getConnection()) {
             PostgresUpsertStatement upsertStatement = null;
             if (autoCorrectMissing || autoCorrectMismatch) {
-                upsertStatement = new PostgresUpsertStatement(
-                        postgresTable, originSession.getCqlTable(), typeMapper, propertyHelper);
+                upsertStatement = new PostgresUpsertStatement(postgresTable, originSession.getCqlTable(), typeMapper,
+                        propertyHelper);
                 upsertStatement.initialize(connection);
             }
 
@@ -289,9 +268,13 @@ public class PostgresDiffJobSession extends BaseJobSession {
     /**
      * Compares an origin Cassandra row with a PostgreSQL target row.
      *
-     * @param originRow the Cassandra row
-     * @param targetRow the PostgreSQL row as a map
-     * @param pk        the primary key for logging
+     * @param originRow
+     *            the Cassandra row
+     * @param targetRow
+     *            the PostgreSQL row as a map
+     * @param pk
+     *            the primary key for logging
+     *
      * @return a string describing the differences, or empty if equal
      */
     private String compareRows(Row originRow, Map<String, Object> targetRow, Object pk) {
@@ -330,13 +313,12 @@ public class PostgresDiffJobSession extends BaseJobSession {
 
                 // Compare values
                 if (!valuesEqual(convertedOriginValue, targetValue)) {
-                    diffData.append("Column:").append(targetColName)
-                            .append("-origin[").append(originValue)
+                    diffData.append("Column:").append(targetColName).append("-origin[").append(originValue)
                             .append("]-target[").append(targetValue).append("]; ");
                 }
             } catch (Exception e) {
-                diffData.append("Column:").append(targetColName)
-                        .append(" Exception comparing values: ").append(e.getMessage()).append("; ");
+                diffData.append("Column:").append(targetColName).append(" Exception comparing values: ")
+                        .append(e.getMessage()).append("; ");
             }
         }
 
@@ -390,25 +372,6 @@ public class PostgresDiffJobSession extends BaseJobSession {
 
         // String comparison
         return Objects.equals(origin.toString(), target.toString());
-    }
-
-    /**
-     * Initialize CDM run tracking.
-     */
-    public synchronized void initCdmRun(long runId, long prevRunId, java.util.Collection<PartitionRange> parts,
-            TrackRun trackRunFeature, IJobSessionFactory.JobType jobType) {
-        this.runId = runId;
-        this.trackRunFeature = trackRunFeature;
-        if (null != trackRunFeature) {
-            trackRunFeature.initCdmRun(runId, prevRunId, parts, jobType);
-        }
-    }
-
-    /**
-     * Gets the origin session.
-     */
-    public EnhancedSession getOriginSession() {
-        return originSession;
     }
 
     /**

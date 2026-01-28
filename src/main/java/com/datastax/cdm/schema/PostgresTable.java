@@ -31,8 +31,8 @@ import com.datastax.cdm.properties.IPropertyHelper;
 import com.datastax.cdm.properties.KnownProperties;
 
 /**
- * Represents a PostgreSQL table and provides schema metadata discovery.
- * Discovers column information from the PostgreSQL information_schema.
+ * Represents a PostgreSQL table and provides schema metadata discovery. Discovers column information from the
+ * PostgreSQL information_schema.
  */
 public class PostgresTable {
 
@@ -47,33 +47,22 @@ public class PostgresTable {
     /**
      * Schema discovery query that retrieves column information and primary key constraints.
      */
-    private static final String COLUMN_QUERY =
-            "SELECT " +
-            "    c.column_name, " +
-            "    c.data_type, " +
-            "    c.udt_name, " +
-            "    c.is_nullable, " +
-            "    c.column_default, " +
-            "    c.ordinal_position " +
-            "FROM information_schema.columns c " +
-            "WHERE c.table_schema = ? AND c.table_name = ? " +
-            "ORDER BY c.ordinal_position";
+    private static final String COLUMN_QUERY = "SELECT " + "    c.column_name, " + "    c.data_type, "
+            + "    c.udt_name, " + "    c.is_nullable, " + "    c.column_default, " + "    c.ordinal_position "
+            + "FROM information_schema.columns c " + "WHERE c.table_schema = ? AND c.table_name = ? "
+            + "ORDER BY c.ordinal_position";
 
-    private static final String PRIMARY_KEY_QUERY =
-            "SELECT kcu.column_name " +
-            "FROM information_schema.table_constraints tc " +
-            "JOIN information_schema.key_column_usage kcu " +
-            "    ON tc.constraint_name = kcu.constraint_name " +
-            "    AND tc.table_schema = kcu.table_schema " +
-            "WHERE tc.constraint_type = 'PRIMARY KEY' " +
-            "    AND tc.table_schema = ? " +
-            "    AND tc.table_name = ? " +
-            "ORDER BY kcu.ordinal_position";
+    private static final String PRIMARY_KEY_QUERY = "SELECT kcu.column_name "
+            + "FROM information_schema.table_constraints tc " + "JOIN information_schema.key_column_usage kcu "
+            + "    ON tc.constraint_name = kcu.constraint_name " + "    AND tc.table_schema = kcu.table_schema "
+            + "WHERE tc.constraint_type = 'PRIMARY KEY' " + "    AND tc.table_schema = ? "
+            + "    AND tc.table_name = ? " + "ORDER BY kcu.ordinal_position";
 
     /**
      * Creates a PostgresTable from property helper configuration.
      *
-     * @param propertyHelper the property helper to read configuration from
+     * @param propertyHelper
+     *            the property helper to read configuration from
      */
     public PostgresTable(IPropertyHelper propertyHelper) {
         String schema = propertyHelper.getString(KnownProperties.PG_SCHEMA);
@@ -101,8 +90,10 @@ public class PostgresTable {
     /**
      * Creates a PostgresTable with explicit schema and table names.
      *
-     * @param schemaName the PostgreSQL schema name
-     * @param tableName  the PostgreSQL table name
+     * @param schemaName
+     *            the PostgreSQL schema name
+     * @param tableName
+     *            the PostgreSQL table name
      */
     public PostgresTable(String schemaName, String tableName) {
         this.schemaName = schemaName != null ? schemaName : "public";
@@ -112,8 +103,11 @@ public class PostgresTable {
     /**
      * Loads table metadata from the database using the provided connection.
      *
-     * @param connection the database connection
-     * @throws SQLException if metadata cannot be loaded
+     * @param connection
+     *            the database connection
+     *
+     * @throws SQLException
+     *             if metadata cannot be loaded
      */
     public void loadMetadata(Connection connection) throws SQLException {
         if (metadataLoaded) {
@@ -129,21 +123,16 @@ public class PostgresTable {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    ColumnInfo columnInfo = new ColumnInfo(
-                            rs.getString("column_name"),
-                            rs.getString("data_type"),
-                            rs.getString("udt_name"),
-                            "YES".equalsIgnoreCase(rs.getString("is_nullable")),
-                            rs.getString("column_default"),
-                            rs.getInt("ordinal_position"));
+                    ColumnInfo columnInfo = new ColumnInfo(rs.getString("column_name"), rs.getString("data_type"),
+                            rs.getString("udt_name"), "YES".equalsIgnoreCase(rs.getString("is_nullable")),
+                            rs.getString("column_default"), rs.getInt("ordinal_position"));
                     columns.add(columnInfo);
                 }
             }
         }
 
         if (columns.isEmpty()) {
-            throw new SQLException(
-                    "Table " + schemaName + "." + tableName + " not found or has no columns");
+            throw new SQLException("Table " + schemaName + "." + tableName + " not found or has no columns");
         }
 
         // Load primary key columns
@@ -159,8 +148,8 @@ public class PostgresTable {
         }
 
         metadataLoaded = true;
-        logger.info("Loaded metadata for {}.{}: {} columns, {} primary key columns",
-                schemaName, tableName, columns.size(), primaryKeyColumns.size());
+        logger.info("Loaded metadata for {}.{}: {} columns, {} primary key columns", schemaName, tableName,
+                columns.size(), primaryKeyColumns.size());
     }
 
     /**
@@ -224,7 +213,9 @@ public class PostgresTable {
     /**
      * Checks if the table has ON CONFLICT support (PostgreSQL 9.5+).
      *
-     * @param connection the database connection
+     * @param connection
+     *            the database connection
+     *
      * @return true if ON CONFLICT is supported
      */
     public boolean hasOnConflictSupport(Connection connection) {
@@ -241,7 +232,9 @@ public class PostgresTable {
     /**
      * Returns the SQL type constant for a column.
      *
-     * @param columnIndex the column index (0-based)
+     * @param columnIndex
+     *            the column index (0-based)
+     *
      * @return the java.sql.Types constant
      */
     public int getSqlType(int columnIndex) {
@@ -254,7 +247,9 @@ public class PostgresTable {
     /**
      * Returns the SQL type constant for a column by name.
      *
-     * @param columnName the column name
+     * @param columnName
+     *            the column name
+     *
      * @return the java.sql.Types constant
      */
     public int getSqlType(String columnName) {
@@ -269,7 +264,9 @@ public class PostgresTable {
     /**
      * Returns the column index for a given column name.
      *
-     * @param columnName the column name
+     * @param columnName
+     *            the column name
+     *
      * @return the column index (0-based)
      */
     public int getColumnIndex(String columnName) {
@@ -301,8 +298,8 @@ public class PostgresTable {
         private final String defaultValue;
         private final int ordinalPosition;
 
-        public ColumnInfo(String name, String dataType, String udtName,
-                boolean nullable, String defaultValue, int ordinalPosition) {
+        public ColumnInfo(String name, String dataType, String udtName, boolean nullable, String defaultValue,
+                int ordinalPosition) {
             this.name = name;
             this.dataType = dataType;
             this.udtName = udtName;
@@ -386,113 +383,113 @@ public class PostgresTable {
             }
 
             switch (lowerDataType) {
-                case "text":
-                case "character varying":
-                case "varchar":
-                case "character":
-                case "char":
-                    return Types.VARCHAR;
-                case "integer":
-                case "int":
-                case "int4":
-                    return Types.INTEGER;
-                case "bigint":
-                case "int8":
-                    return Types.BIGINT;
-                case "smallint":
-                case "int2":
-                    return Types.SMALLINT;
-                case "real":
-                case "float4":
-                    return Types.REAL;
-                case "double precision":
-                case "float8":
-                    return Types.DOUBLE;
-                case "numeric":
-                case "decimal":
-                    return Types.NUMERIC;
-                case "boolean":
-                case "bool":
-                    return Types.BOOLEAN;
-                case "bytea":
-                    return Types.BINARY;
-                case "date":
-                    return Types.DATE;
-                case "time":
-                case "time without time zone":
-                    return Types.TIME;
-                case "time with time zone":
-                case "timetz":
-                    return Types.TIME_WITH_TIMEZONE;
-                case "timestamp":
-                case "timestamp without time zone":
-                    return Types.TIMESTAMP;
-                case "timestamp with time zone":
-                case "timestamptz":
-                    return Types.TIMESTAMP_WITH_TIMEZONE;
-                case "uuid":
-                case "json":
-                case "jsonb":
-                case "inet":
-                case "interval":
-                    return Types.OTHER;
-                default:
-                    return Types.OTHER;
+            case "text":
+            case "character varying":
+            case "varchar":
+            case "character":
+            case "char":
+                return Types.VARCHAR;
+            case "integer":
+            case "int":
+            case "int4":
+                return Types.INTEGER;
+            case "bigint":
+            case "int8":
+                return Types.BIGINT;
+            case "smallint":
+            case "int2":
+                return Types.SMALLINT;
+            case "real":
+            case "float4":
+                return Types.REAL;
+            case "double precision":
+            case "float8":
+                return Types.DOUBLE;
+            case "numeric":
+            case "decimal":
+                return Types.NUMERIC;
+            case "boolean":
+            case "bool":
+                return Types.BOOLEAN;
+            case "bytea":
+                return Types.BINARY;
+            case "date":
+                return Types.DATE;
+            case "time":
+            case "time without time zone":
+                return Types.TIME;
+            case "time with time zone":
+            case "timetz":
+                return Types.TIME_WITH_TIMEZONE;
+            case "timestamp":
+            case "timestamp without time zone":
+                return Types.TIMESTAMP;
+            case "timestamp with time zone":
+            case "timestamptz":
+                return Types.TIMESTAMP_WITH_TIMEZONE;
+            case "uuid":
+            case "json":
+            case "jsonb":
+            case "inet":
+            case "interval":
+                return Types.OTHER;
+            default:
+                return Types.OTHER;
             }
         }
 
         private static Class<?> mapSqlTypeToJavaClass(int sqlType, String udtName) {
             switch (sqlType) {
-                case Types.VARCHAR:
-                case Types.CHAR:
-                case Types.LONGVARCHAR:
-                    return String.class;
-                case Types.INTEGER:
-                    return Integer.class;
-                case Types.BIGINT:
-                    return Long.class;
-                case Types.SMALLINT:
-                    return Short.class;
-                case Types.REAL:
-                    return Float.class;
-                case Types.DOUBLE:
-                    return Double.class;
-                case Types.NUMERIC:
-                case Types.DECIMAL:
-                    return java.math.BigDecimal.class;
-                case Types.BOOLEAN:
-                    return Boolean.class;
-                case Types.BINARY:
-                case Types.VARBINARY:
-                case Types.LONGVARBINARY:
-                    return byte[].class;
-                case Types.DATE:
-                    return java.time.LocalDate.class;
-                case Types.TIME:
-                    return java.time.LocalTime.class;
-                case Types.TIMESTAMP:
-                    return java.time.LocalDateTime.class;
-                case Types.TIMESTAMP_WITH_TIMEZONE:
-                    return java.time.OffsetDateTime.class;
-                case Types.ARRAY:
-                    return java.sql.Array.class;
-                case Types.OTHER:
-                    if (udtName != null) {
-                        String lowerUdt = udtName.toLowerCase();
-                        if (lowerUdt.equals("uuid")) {
-                            return java.util.UUID.class;
-                        }
+            case Types.VARCHAR:
+            case Types.CHAR:
+            case Types.LONGVARCHAR:
+                return String.class;
+            case Types.INTEGER:
+                return Integer.class;
+            case Types.BIGINT:
+                return Long.class;
+            case Types.SMALLINT:
+                return Short.class;
+            case Types.REAL:
+                return Float.class;
+            case Types.DOUBLE:
+                return Double.class;
+            case Types.NUMERIC:
+            case Types.DECIMAL:
+                return java.math.BigDecimal.class;
+            case Types.BOOLEAN:
+                return Boolean.class;
+            case Types.BINARY:
+            case Types.VARBINARY:
+            case Types.LONGVARBINARY:
+                return byte[].class;
+            case Types.DATE:
+                return java.time.LocalDate.class;
+            case Types.TIME:
+                return java.time.LocalTime.class;
+            case Types.TIMESTAMP:
+                return java.time.LocalDateTime.class;
+            case Types.TIMESTAMP_WITH_TIMEZONE:
+                return java.time.OffsetDateTime.class;
+            case Types.ARRAY:
+                return java.sql.Array.class;
+            case Types.OTHER:
+                if (udtName != null) {
+                    String lowerUdt = udtName.toLowerCase();
+                    if (lowerUdt.equals("uuid")) {
+                        return java.util.UUID.class;
                     }
-                    return Object.class;
-                default:
-                    return Object.class;
+                }
+                return Object.class;
+            default:
+                return Object.class;
             }
         }
 
         @Override
         public String toString() {
-            return String.format("ColumnInfo{name='%s', dataType='%s', udtName='%s', nullable=%b}",
-                    name, dataType, udtName, nullable);
+            return String.format("ColumnInfo{name='%s', dataType='%s', udtName='%s', nullable=%b}", name, dataType,
+                    udtName, nullable);
         }
     }
 }

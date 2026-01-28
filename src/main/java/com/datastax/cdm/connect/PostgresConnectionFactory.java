@@ -27,8 +27,8 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
 /**
- * Manages JDBC connection pooling for PostgreSQL target database.
- * Uses HikariCP for high-performance connection pooling.
+ * Manages JDBC connection pooling for PostgreSQL target database. Uses HikariCP for high-performance connection
+ * pooling.
  */
 public class PostgresConnectionFactory implements AutoCloseable {
 
@@ -42,14 +42,16 @@ public class PostgresConnectionFactory implements AutoCloseable {
     /**
      * Creates a new PostgresConnectionFactory with connection pooling.
      *
-     * @param propertyHelper the property helper to read configuration from
-     * @throws IllegalArgumentException if required properties are missing
+     * @param propertyHelper
+     *            the property helper to read configuration from
+     *
+     * @throws IllegalArgumentException
+     *             if required properties are missing
      */
     public PostgresConnectionFactory(IPropertyHelper propertyHelper) {
         this.jdbcUrl = propertyHelper.getString(KnownProperties.PG_JDBC_URL);
         if (jdbcUrl == null || jdbcUrl.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "PostgreSQL JDBC URL is required: " + KnownProperties.PG_JDBC_URL);
+            throw new IllegalArgumentException("PostgreSQL JDBC URL is required: " + KnownProperties.PG_JDBC_URL);
         }
 
         String username = propertyHelper.getString(KnownProperties.PG_USERNAME);
@@ -87,8 +89,8 @@ public class PostgresConnectionFactory implements AutoCloseable {
         // Pool name for monitoring
         config.setPoolName("CDM-PostgreSQL-Pool");
 
-        logger.info("Creating PostgreSQL connection pool: url={}, schema={}, table={}, poolSize={}",
-                jdbcUrl, schema, table, config.getMaximumPoolSize());
+        logger.info("Creating PostgreSQL connection pool: url={}, schema={}, table={}, poolSize={}", jdbcUrl, schema,
+                table, config.getMaximumPoolSize());
 
         this.dataSource = new HikariDataSource(config);
     }
@@ -97,7 +99,9 @@ public class PostgresConnectionFactory implements AutoCloseable {
      * Gets a connection from the pool.
      *
      * @return a database connection
-     * @throws SQLException if unable to get a connection
+     *
+     * @throws SQLException
+     *             if unable to get a connection
      */
     public Connection getConnection() throws SQLException {
         return dataSource.getConnection();
@@ -136,8 +140,7 @@ public class PostgresConnectionFactory implements AutoCloseable {
      * @return pool statistics
      */
     public PoolStats getPoolStats() {
-        return new PoolStats(
-                dataSource.getHikariPoolMXBean().getActiveConnections(),
+        return new PoolStats(dataSource.getHikariPoolMXBean().getActiveConnections(),
                 dataSource.getHikariPoolMXBean().getIdleConnections(),
                 dataSource.getHikariPoolMXBean().getTotalConnections(),
                 dataSource.getHikariPoolMXBean().getThreadsAwaitingConnection());
@@ -183,8 +186,8 @@ public class PostgresConnectionFactory implements AutoCloseable {
         private final int totalConnections;
         private final int threadsAwaitingConnection;
 
-        public PoolStats(int activeConnections, int idleConnections,
-                int totalConnections, int threadsAwaitingConnection) {
+        public PoolStats(int activeConnections, int idleConnections, int totalConnections,
+                int threadsAwaitingConnection) {
             this.activeConnections = activeConnections;
             this.idleConnections = idleConnections;
             this.totalConnections = totalConnections;
@@ -209,8 +212,8 @@ public class PostgresConnectionFactory implements AutoCloseable {
 
         @Override
         public String toString() {
-            return String.format("PoolStats{active=%d, idle=%d, total=%d, waiting=%d}",
-                    activeConnections, idleConnections, totalConnections, threadsAwaitingConnection);
+            return String.format("PoolStats{active=%d, idle=%d, total=%d, waiting=%d}", activeConnections,
+                    idleConnections, totalConnections, threadsAwaitingConnection);
         }
     }
 }

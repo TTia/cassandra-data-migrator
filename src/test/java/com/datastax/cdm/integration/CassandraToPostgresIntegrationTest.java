@@ -23,7 +23,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Types;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -44,8 +43,8 @@ import com.datastax.cdm.schema.PostgresTypeMapper;
 import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
- * Integration tests for Cassandra to PostgreSQL migration using Testcontainers.
- * These tests verify the PostgreSQL components work correctly with a real database.
+ * Integration tests for Cassandra to PostgreSQL migration using Testcontainers. These tests verify the PostgreSQL
+ * components work correctly with a real database.
  *
  * Run with: mvn test -Dtest=CassandraToPostgresIntegrationTest -DskipUnitTests=true
  */
@@ -57,20 +56,15 @@ public class CassandraToPostgresIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
-            DockerImageName.parse(TIMESCALE_IMAGE).asCompatibleSubstituteFor("postgres"))
-                    .withDatabaseName("testdb")
-                    .withUsername("testuser")
-                    .withPassword("testpass");
+            DockerImageName.parse(TIMESCALE_IMAGE).asCompatibleSubstituteFor("postgres")).withDatabaseName("testdb")
+                    .withUsername("testuser").withPassword("testpass");
 
     private static Connection connection;
     private static PostgresTypeMapper typeMapper;
 
     @BeforeAll
     static void setup() throws SQLException {
-        connection = DriverManager.getConnection(
-                postgres.getJdbcUrl(),
-                postgres.getUsername(),
-                postgres.getPassword());
+        connection = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         typeMapper = new PostgresTypeMapper();
 
         // Create test tables
@@ -87,38 +81,17 @@ public class CassandraToPostgresIntegrationTest {
     private static void createTestTables() throws SQLException {
         try (Statement stmt = connection.createStatement()) {
             // Basic types table
-            stmt.execute("""
-                    CREATE TABLE IF NOT EXISTS basic_types (
-                        id UUID PRIMARY KEY,
-                        text_col TEXT,
-                        int_col INTEGER,
-                        bigint_col BIGINT,
-                        float_col REAL,
-                        double_col DOUBLE PRECISION,
-                        bool_col BOOLEAN,
-                        timestamp_col TIMESTAMP WITH TIME ZONE
-                    )
-                    """);
+            stmt.execute("CREATE TABLE IF NOT EXISTS basic_types (" + "id UUID PRIMARY KEY, " + "text_col TEXT, "
+                    + "int_col INTEGER, " + "bigint_col BIGINT, " + "float_col REAL, " + "double_col DOUBLE PRECISION, "
+                    + "bool_col BOOLEAN, " + "timestamp_col TIMESTAMP WITH TIME ZONE)");
 
             // Collection types table
-            stmt.execute("""
-                    CREATE TABLE IF NOT EXISTS collection_types (
-                        id UUID PRIMARY KEY,
-                        list_col TEXT[],
-                        set_col INTEGER[],
-                        map_col JSONB
-                    )
-                    """);
+            stmt.execute("CREATE TABLE IF NOT EXISTS collection_types (" + "id UUID PRIMARY KEY, " + "list_col TEXT[], "
+                    + "set_col INTEGER[], " + "map_col JSONB)");
 
             // Complex types table
-            stmt.execute("""
-                    CREATE TABLE IF NOT EXISTS complex_types (
-                        id UUID PRIMARY KEY,
-                        udt_col JSONB,
-                        blob_col BYTEA,
-                        inet_col INET
-                    )
-                    """);
+            stmt.execute("CREATE TABLE IF NOT EXISTS complex_types (" + "id UUID PRIMARY KEY, " + "udt_col JSONB, "
+                    + "blob_col BYTEA, " + "inet_col INET)");
         }
     }
 
@@ -135,10 +108,8 @@ public class CassandraToPostgresIntegrationTest {
         boolean boolVal = true;
 
         // Insert
-        String insertSql = """
-                INSERT INTO basic_types (id, text_col, int_col, bigint_col, float_col, double_col, bool_col, timestamp_col)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-                """;
+        String insertSql = "INSERT INTO basic_types (id, text_col, int_col, bigint_col, float_col, double_col, bool_col, timestamp_col) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
 
         try (PreparedStatement pstmt = connection.prepareStatement(insertSql)) {
             pstmt.setObject(1, id);
@@ -328,11 +299,8 @@ public class CassandraToPostgresIntegrationTest {
         UUID id = UUID.randomUUID();
 
         // First insert
-        String upsertSql = """
-                INSERT INTO basic_types (id, text_col, int_col)
-                VALUES (?, ?, ?)
-                ON CONFLICT (id) DO UPDATE SET text_col = EXCLUDED.text_col, int_col = EXCLUDED.int_col
-                """;
+        String upsertSql = "INSERT INTO basic_types (id, text_col, int_col) VALUES (?, ?, ?) "
+                + "ON CONFLICT (id) DO UPDATE SET text_col = EXCLUDED.text_col, int_col = EXCLUDED.int_col";
 
         try (PreparedStatement pstmt = connection.prepareStatement(upsertSql)) {
             pstmt.setObject(1, id);
@@ -367,10 +335,7 @@ public class CassandraToPostgresIntegrationTest {
 
     @Test
     void testBatchInsert() throws SQLException {
-        String insertSql = """
-                INSERT INTO basic_types (id, text_col, int_col)
-                VALUES (?, ?, ?)
-                """;
+        String insertSql = "INSERT INTO basic_types (id, text_col, int_col) VALUES (?, ?, ?)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(insertSql)) {
             for (int i = 0; i < 100; i++) {

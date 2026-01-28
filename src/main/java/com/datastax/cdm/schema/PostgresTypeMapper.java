@@ -55,15 +55,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 /**
- * Maps Cassandra types to PostgreSQL types and handles value conversion.
- * Provides complete type mapping for all Cassandra data types.
+ * Maps Cassandra types to PostgreSQL types and handles value conversion. Provides complete type mapping for all
+ * Cassandra data types.
  */
 public class PostgresTypeMapper {
 
     private static final Logger logger = LoggerFactory.getLogger(PostgresTypeMapper.class);
-    private static final Gson gson = new GsonBuilder()
-            .serializeNulls()
-            .create();
+    private static final Gson gson = new GsonBuilder().serializeNulls().create();
 
     /**
      * Information about a PostgreSQL type mapping.
@@ -118,7 +116,9 @@ public class PostgresTypeMapper {
     /**
      * Maps a Cassandra DataType to a PostgreSQL type.
      *
-     * @param cassandraType the Cassandra data type
+     * @param cassandraType
+     *            the Cassandra data type
+     *
      * @return the corresponding PostgreSQL type
      */
     public PostgresType mapCassandraType(DataType cassandraType) {
@@ -215,14 +215,19 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra value to a PostgreSQL-compatible value.
      *
-     * @param cassandraValue the value from Cassandra
-     * @param fromType       the Cassandra data type
-     * @param connection     the PostgreSQL connection (for creating arrays)
+     * @param cassandraValue
+     *            the value from Cassandra
+     * @param fromType
+     *            the Cassandra data type
+     * @param connection
+     *            the PostgreSQL connection (for creating arrays)
+     *
      * @return the converted value suitable for PostgreSQL
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
-    public Object convertValue(Object cassandraValue, DataType fromType, Connection connection)
-            throws SQLException {
+    public Object convertValue(Object cassandraValue, DataType fromType, Connection connection) throws SQLException {
         if (cassandraValue == null) {
             return null;
         }
@@ -277,14 +282,19 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra LIST to a PostgreSQL ARRAY.
      *
-     * @param list        the list to convert
-     * @param connection  the PostgreSQL connection
-     * @param elementType the Cassandra element type
+     * @param list
+     *            the list to convert
+     * @param connection
+     *            the PostgreSQL connection
+     * @param elementType
+     *            the Cassandra element type
+     *
      * @return a PostgreSQL Array
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
-    public java.sql.Array convertList(List<?> list, Connection connection, DataType elementType)
-            throws SQLException {
+    public java.sql.Array convertList(List<?> list, Connection connection, DataType elementType) throws SQLException {
         String pgElementType = getArrayElementTypeName(elementType);
         Object[] elements = convertCollectionElements(list, elementType);
         return connection.createArrayOf(pgElementType, elements);
@@ -293,14 +303,19 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra SET to a PostgreSQL ARRAY.
      *
-     * @param set         the set to convert
-     * @param connection  the PostgreSQL connection
-     * @param elementType the Cassandra element type
+     * @param set
+     *            the set to convert
+     * @param connection
+     *            the PostgreSQL connection
+     * @param elementType
+     *            the Cassandra element type
+     *
      * @return a PostgreSQL Array
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
-    public java.sql.Array convertSet(Set<?> set, Connection connection, DataType elementType)
-            throws SQLException {
+    public java.sql.Array convertSet(Set<?> set, Connection connection, DataType elementType) throws SQLException {
         String pgElementType = getArrayElementTypeName(elementType);
         Object[] elements = convertCollectionElements(new ArrayList<>(set), elementType);
         return connection.createArrayOf(pgElementType, elements);
@@ -309,9 +324,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra MAP to a PostgreSQL JSONB.
      *
-     * @param map the map to convert
+     * @param map
+     *            the map to convert
+     *
      * @return a PGobject representing JSONB
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertMap(Map<?, ?> map) throws SQLException {
         PGobject jsonb = new PGobject();
@@ -330,9 +349,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra UDT to a PostgreSQL JSONB.
      *
-     * @param udt the UDT value to convert
+     * @param udt
+     *            the UDT value to convert
+     *
      * @return a PGobject representing JSONB
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertUDT(UdtValue udt) throws SQLException {
         PGobject jsonb = new PGobject();
@@ -340,8 +363,7 @@ public class PostgresTypeMapper {
 
         Map<String, Object> fields = new HashMap<>();
         UserDefinedType udtType = udt.getType();
-        List<String> fieldNames = udtType.getFieldNames().stream()
-                .map(id -> id.asInternal())
+        List<String> fieldNames = udtType.getFieldNames().stream().map(id -> id.asInternal())
                 .collect(Collectors.toList());
 
         for (int i = 0; i < fieldNames.size(); i++) {
@@ -356,9 +378,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra Tuple to a PostgreSQL JSONB array.
      *
-     * @param tuple the tuple value to convert
+     * @param tuple
+     *            the tuple value to convert
+     *
      * @return a PGobject representing JSONB
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertTuple(TupleValue tuple) throws SQLException {
         PGobject jsonb = new PGobject();
@@ -379,7 +405,9 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra BLOB to a PostgreSQL BYTEA.
      *
-     * @param blob the ByteBuffer to convert
+     * @param blob
+     *            the ByteBuffer to convert
+     *
      * @return a byte array
      */
     public byte[] convertBlob(ByteBuffer blob) {
@@ -394,7 +422,9 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra TIMESTAMP to PostgreSQL TIMESTAMP WITH TIME ZONE.
      *
-     * @param instant the instant to convert
+     * @param instant
+     *            the instant to convert
+     *
      * @return an OffsetDateTime
      */
     public OffsetDateTime convertTimestamp(Instant instant) {
@@ -407,9 +437,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra DURATION to a PostgreSQL INTERVAL.
      *
-     * @param duration the CqlDuration to convert
+     * @param duration
+     *            the CqlDuration to convert
+     *
      * @return a PGobject representing an interval
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertDuration(CqlDuration duration) throws SQLException {
         if (duration == null) {
@@ -451,9 +485,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra INET to a PostgreSQL INET.
      *
-     * @param inet the InetAddress to convert
+     * @param inet
+     *            the InetAddress to convert
+     *
      * @return a PGobject representing an inet
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertInet(InetAddress inet) throws SQLException {
         if (inet == null) {
@@ -468,9 +506,13 @@ public class PostgresTypeMapper {
     /**
      * Converts a Cassandra VECTOR to a PostgreSQL vector (pgvector).
      *
-     * @param vector the vector elements
+     * @param vector
+     *            the vector elements
+     *
      * @return a PGobject representing a vector
-     * @throws SQLException if conversion fails
+     *
+     * @throws SQLException
+     *             if conversion fails
      */
     public PGobject convertVector(List<?> vector) throws SQLException {
         if (vector == null) {
@@ -535,8 +577,8 @@ public class PostgresTypeMapper {
             return "bytea";
         }
         // For complex nested types, use JSONB
-        if (elementType instanceof MapType || elementType instanceof UserDefinedType
-                || elementType instanceof ListType || elementType instanceof SetType) {
+        if (elementType instanceof MapType || elementType instanceof UserDefinedType || elementType instanceof ListType
+                || elementType instanceof SetType) {
             return "jsonb";
         }
         return "text";
@@ -562,8 +604,8 @@ public class PostgresTypeMapper {
         }
 
         // Handle nested collections/maps as JSONB strings
-        if (element instanceof Map || element instanceof UdtValue
-                || element instanceof List || element instanceof Set) {
+        if (element instanceof Map || element instanceof UdtValue || element instanceof List
+                || element instanceof Set) {
             return gson.toJson(convertValueForJson(element));
         }
 
@@ -617,8 +659,7 @@ public class PostgresTypeMapper {
             UdtValue udtValue = (UdtValue) value;
             Map<String, Object> fields = new HashMap<>();
             UserDefinedType udtType = udtValue.getType();
-            List<String> fieldNames = udtType.getFieldNames().stream()
-                    .map(id -> id.asInternal())
+            List<String> fieldNames = udtType.getFieldNames().stream().map(id -> id.asInternal())
                     .collect(Collectors.toList());
             for (int i = 0; i < fieldNames.size(); i++) {
                 fields.put(fieldNames.get(i), convertValueForJson(udtValue.getObject(i)));

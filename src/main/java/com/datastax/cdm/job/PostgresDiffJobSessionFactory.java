@@ -26,18 +26,19 @@ import com.datastax.cdm.properties.PropertyHelper;
 import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
- * Factory for creating PostgresCopyJobSession instances. Used when the target database type is PostgreSQL.
+ * Factory for creating PostgresDiffJobSession instances. Used when the target database type is PostgreSQL for
+ * validation/diff jobs.
  */
-public class PostgresCopyJobSessionFactory implements IJobSessionFactory<PartitionRange>, Serializable {
+public class PostgresDiffJobSessionFactory implements IJobSessionFactory<PartitionRange>, Serializable {
 
     private static final long serialVersionUID = 1L;
-    private static final Logger logger = LoggerFactory.getLogger(PostgresCopyJobSessionFactory.class);
+    private static final Logger logger = LoggerFactory.getLogger(PostgresDiffJobSessionFactory.class);
 
-    private static PostgresCopyJobSession jobSession = null;
+    private static PostgresDiffJobSession jobSession = null;
     private static PostgresConnectionFactory connectionFactory = null;
 
     /**
-     * Gets a singleton instance of PostgresCopyJobSession. Implements IJobSessionFactory interface. The targetSession
+     * Gets a singleton instance of PostgresDiffJobSession. Implements IJobSessionFactory interface. The targetSession
      * parameter is ignored since PostgreSQL connections are managed via JDBC, not CqlSession.
      *
      * @param originSession
@@ -53,11 +54,11 @@ public class PostgresCopyJobSessionFactory implements IJobSessionFactory<Partiti
     public AbstractJobSession<PartitionRange> getInstance(CqlSession originSession, CqlSession targetSession,
             PropertyHelper propHelper) {
         if (jobSession == null) {
-            synchronized (PostgresCopyJobSession.class) {
+            synchronized (PostgresDiffJobSession.class) {
                 if (jobSession == null) {
-                    logger.info("Creating PostgresCopyJobSession");
+                    logger.info("Creating PostgresDiffJobSession");
                     connectionFactory = new PostgresConnectionFactory(propHelper);
-                    jobSession = new PostgresCopyJobSession(originSession, connectionFactory, propHelper);
+                    jobSession = new PostgresDiffJobSession(originSession, connectionFactory, propHelper);
                 }
             }
         }

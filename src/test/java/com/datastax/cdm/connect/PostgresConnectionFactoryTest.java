@@ -18,15 +18,32 @@ package com.datastax.cdm.connect;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
+import java.sql.Connection;
+import java.sql.SQLException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import com.datastax.cdm.properties.IPropertyHelper;
 import com.datastax.cdm.properties.KnownProperties;
 
+@Testcontainers
+@EnabledIfEnvironmentVariable(named = "RUN_INTEGRATION_TESTS", matches = "true")
 public class PostgresConnectionFactoryTest {
+
+    private static final String TIMESCALE_IMAGE = "timescale/timescaledb:latest-pg16";
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+            DockerImageName.parse(TIMESCALE_IMAGE).asCompatibleSubstituteFor("postgres")).withDatabaseName("testdb")
+                    .withUsername("testuser").withPassword("testpass");
 
     @Mock
     private IPropertyHelper propertyHelper;
@@ -58,10 +75,9 @@ public class PostgresConnectionFactoryTest {
 
     @Test
     public void constructor_validConfiguration_createsFactory() {
-        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL))
-                .thenReturn("jdbc:postgresql://localhost:5432/testdb");
-        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn("testuser");
-        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn("testpass");
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
         when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn("public");
         when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn("test_table");
         when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(5);
@@ -70,7 +86,7 @@ public class PostgresConnectionFactoryTest {
         PostgresConnectionFactory factory = new PostgresConnectionFactory(propertyHelper);
 
         assertNotNull(factory);
-        assertEquals("jdbc:postgresql://localhost:5432/testdb", factory.getJdbcUrl());
+        assertEquals(postgres.getJdbcUrl(), factory.getJdbcUrl());
         assertEquals("public", factory.getSchema());
         assertEquals("test_table", factory.getTable());
         assertFalse(factory.isClosed());
@@ -81,10 +97,9 @@ public class PostgresConnectionFactoryTest {
 
     @Test
     public void constructor_nullPoolSettings_usesDefaults() {
-        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL))
-                .thenReturn("jdbc:postgresql://localhost:5432/testdb");
-        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(null);
-        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(null);
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
         when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn(null);
         when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn(null);
         when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(null);
@@ -116,10 +131,9 @@ public class PostgresConnectionFactoryTest {
 
     @Test
     public void close_calledMultipleTimes_noError() {
-        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL))
-                .thenReturn("jdbc:postgresql://localhost:5432/testdb");
-        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn("user");
-        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn("pass");
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
         when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn("public");
         when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn("test");
         when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(2);
@@ -131,5 +145,61 @@ public class PostgresConnectionFactoryTest {
         factory.close(); // Should not throw
 
         assertTrue(factory.isClosed());
+    }
+
+    @Test
+    public void getConnection_returnsValidConnection() throws SQLException {
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
+        when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn("public");
+        when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn("test");
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(5);
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_TIMEOUT)).thenReturn(30000);
+
+        PostgresConnectionFactory factory = new PostgresConnectionFactory(propertyHelper);
+
+        try (Connection conn = factory.getConnection()) {
+            assertNotNull(conn);
+            assertFalse(conn.isClosed());
+        }
+
+        factory.close();
+    }
+
+    @Test
+    public void getPoolStats_returnsStats() {
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
+        when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn("public");
+        when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn("test");
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(5);
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_TIMEOUT)).thenReturn(30000);
+
+        PostgresConnectionFactory factory = new PostgresConnectionFactory(propertyHelper);
+
+        PostgresConnectionFactory.PoolStats stats = factory.getPoolStats();
+        assertNotNull(stats);
+        assertTrue(stats.getTotalConnections() >= 0);
+
+        factory.close();
+    }
+
+    @Test
+    public void testConnection_validConnection_returnsTrue() {
+        when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
+        when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
+        when(propertyHelper.getString(KnownProperties.PG_PASSWORD)).thenReturn(postgres.getPassword());
+        when(propertyHelper.getString(KnownProperties.PG_SCHEMA)).thenReturn("public");
+        when(propertyHelper.getString(KnownProperties.PG_TABLE)).thenReturn("test");
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_SIZE)).thenReturn(5);
+        when(propertyHelper.getInteger(KnownProperties.PG_POOL_TIMEOUT)).thenReturn(30000);
+
+        PostgresConnectionFactory factory = new PostgresConnectionFactory(propertyHelper);
+
+        assertTrue(factory.testConnection());
+
+        factory.close();
     }
 }

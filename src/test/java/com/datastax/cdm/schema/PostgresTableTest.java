@@ -154,36 +154,25 @@ public class PostgresTableTest {
     @Test
     public void columnInfo_mapDataTypeToSqlType() {
         // Test various data type mappings
-        assertEquals(Types.VARCHAR,
-                new PostgresTable.ColumnInfo("col", "text", null, true, null, 1).getSqlType());
+        assertEquals(Types.VARCHAR, new PostgresTable.ColumnInfo("col", "text", null, true, null, 1).getSqlType());
         assertEquals(Types.VARCHAR,
                 new PostgresTable.ColumnInfo("col", "character varying", null, true, null, 1).getSqlType());
-        assertEquals(Types.INTEGER,
-                new PostgresTable.ColumnInfo("col", "integer", null, true, null, 1).getSqlType());
-        assertEquals(Types.BIGINT,
-                new PostgresTable.ColumnInfo("col", "bigint", null, true, null, 1).getSqlType());
-        assertEquals(Types.SMALLINT,
-                new PostgresTable.ColumnInfo("col", "smallint", null, true, null, 1).getSqlType());
-        assertEquals(Types.REAL,
-                new PostgresTable.ColumnInfo("col", "real", null, true, null, 1).getSqlType());
+        assertEquals(Types.INTEGER, new PostgresTable.ColumnInfo("col", "integer", null, true, null, 1).getSqlType());
+        assertEquals(Types.BIGINT, new PostgresTable.ColumnInfo("col", "bigint", null, true, null, 1).getSqlType());
+        assertEquals(Types.SMALLINT, new PostgresTable.ColumnInfo("col", "smallint", null, true, null, 1).getSqlType());
+        assertEquals(Types.REAL, new PostgresTable.ColumnInfo("col", "real", null, true, null, 1).getSqlType());
         assertEquals(Types.DOUBLE,
                 new PostgresTable.ColumnInfo("col", "double precision", null, true, null, 1).getSqlType());
-        assertEquals(Types.NUMERIC,
-                new PostgresTable.ColumnInfo("col", "numeric", null, true, null, 1).getSqlType());
-        assertEquals(Types.BOOLEAN,
-                new PostgresTable.ColumnInfo("col", "boolean", null, true, null, 1).getSqlType());
-        assertEquals(Types.BINARY,
-                new PostgresTable.ColumnInfo("col", "bytea", null, true, null, 1).getSqlType());
-        assertEquals(Types.DATE,
-                new PostgresTable.ColumnInfo("col", "date", null, true, null, 1).getSqlType());
-        assertEquals(Types.TIME,
-                new PostgresTable.ColumnInfo("col", "time", null, true, null, 1).getSqlType());
+        assertEquals(Types.NUMERIC, new PostgresTable.ColumnInfo("col", "numeric", null, true, null, 1).getSqlType());
+        assertEquals(Types.BOOLEAN, new PostgresTable.ColumnInfo("col", "boolean", null, true, null, 1).getSqlType());
+        assertEquals(Types.BINARY, new PostgresTable.ColumnInfo("col", "bytea", null, true, null, 1).getSqlType());
+        assertEquals(Types.DATE, new PostgresTable.ColumnInfo("col", "date", null, true, null, 1).getSqlType());
+        assertEquals(Types.TIME, new PostgresTable.ColumnInfo("col", "time", null, true, null, 1).getSqlType());
         assertEquals(Types.TIMESTAMP,
                 new PostgresTable.ColumnInfo("col", "timestamp", null, true, null, 1).getSqlType());
         assertEquals(Types.TIMESTAMP_WITH_TIMEZONE,
                 new PostgresTable.ColumnInfo("col", "timestamp with time zone", null, true, null, 1).getSqlType());
-        assertEquals(Types.ARRAY,
-                new PostgresTable.ColumnInfo("col", "ARRAY", null, true, null, 1).getSqlType());
+        assertEquals(Types.ARRAY, new PostgresTable.ColumnInfo("col", "ARRAY", null, true, null, 1).getSqlType());
     }
 
     @Test
@@ -204,22 +193,16 @@ public class PostgresTableTest {
 
     @Test
     public void columnInfo_nullDataType_returnsOther() {
-        assertEquals(Types.OTHER,
-                new PostgresTable.ColumnInfo("col", null, null, true, null, 1).getSqlType());
+        assertEquals(Types.OTHER, new PostgresTable.ColumnInfo("col", null, null, true, null, 1).getSqlType());
     }
 
     @Test
     public void columnInfo_getJavaType() {
-        assertEquals(String.class,
-                new PostgresTable.ColumnInfo("col", "text", null, true, null, 1).getJavaType());
-        assertEquals(Integer.class,
-                new PostgresTable.ColumnInfo("col", "integer", null, true, null, 1).getJavaType());
-        assertEquals(Long.class,
-                new PostgresTable.ColumnInfo("col", "bigint", null, true, null, 1).getJavaType());
-        assertEquals(Boolean.class,
-                new PostgresTable.ColumnInfo("col", "boolean", null, true, null, 1).getJavaType());
-        assertEquals(byte[].class,
-                new PostgresTable.ColumnInfo("col", "bytea", null, true, null, 1).getJavaType());
+        assertEquals(String.class, new PostgresTable.ColumnInfo("col", "text", null, true, null, 1).getJavaType());
+        assertEquals(Integer.class, new PostgresTable.ColumnInfo("col", "integer", null, true, null, 1).getJavaType());
+        assertEquals(Long.class, new PostgresTable.ColumnInfo("col", "bigint", null, true, null, 1).getJavaType());
+        assertEquals(Boolean.class, new PostgresTable.ColumnInfo("col", "boolean", null, true, null, 1).getJavaType());
+        assertEquals(byte[].class, new PostgresTable.ColumnInfo("col", "bytea", null, true, null, 1).getJavaType());
         assertEquals(java.time.LocalDate.class,
                 new PostgresTable.ColumnInfo("col", "date", null, true, null, 1).getJavaType());
         assertEquals(java.util.UUID.class,
@@ -228,8 +211,7 @@ public class PostgresTableTest {
 
     @Test
     public void columnInfo_toString_formatsCorrectly() {
-        PostgresTable.ColumnInfo info = new PostgresTable.ColumnInfo(
-                "test_col", "text", null, false, "default_val", 1);
+        PostgresTable.ColumnInfo info = new PostgresTable.ColumnInfo("test_col", "text", null, false, "default_val", 1);
 
         String str = info.toString();
         assertTrue(str.contains("test_col"));
@@ -239,8 +221,7 @@ public class PostgresTableTest {
 
     @Test
     public void columnInfo_getters() {
-        PostgresTable.ColumnInfo info = new PostgresTable.ColumnInfo(
-                "col_name", "integer", "int4", true, "0", 5);
+        PostgresTable.ColumnInfo info = new PostgresTable.ColumnInfo("col_name", "integer", "int4", true, "0", 5);
 
         assertEquals("col_name", info.getName());
         assertEquals("integer", info.getDataType());

@@ -36,8 +36,8 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
- * Builds and executes PostgreSQL INSERT/UPSERT statements for migrating data from Cassandra.
- * Supports batch execution, transaction management, and retry logic.
+ * Builds and executes PostgreSQL INSERT/UPSERT statements for migrating data from Cassandra. Supports batch execution,
+ * transaction management, and retry logic.
  */
 public class PostgresUpsertStatement {
 
@@ -73,13 +73,17 @@ public class PostgresUpsertStatement {
     /**
      * Creates a PostgresUpsertStatement for the given tables.
      *
-     * @param targetTable    the PostgreSQL target table
-     * @param originTable    the Cassandra origin table
-     * @param typeMapper     the type mapper for value conversion
-     * @param propertyHelper the property helper for configuration
+     * @param targetTable
+     *            the PostgreSQL target table
+     * @param originTable
+     *            the Cassandra origin table
+     * @param typeMapper
+     *            the type mapper for value conversion
+     * @param propertyHelper
+     *            the property helper for configuration
      */
-    public PostgresUpsertStatement(PostgresTable targetTable, CqlTable originTable,
-            PostgresTypeMapper typeMapper, IPropertyHelper propertyHelper) {
+    public PostgresUpsertStatement(PostgresTable targetTable, CqlTable originTable, PostgresTypeMapper typeMapper,
+            IPropertyHelper propertyHelper) {
         this.targetTable = targetTable;
         this.originTable = originTable;
         this.typeMapper = typeMapper;
@@ -107,15 +111,18 @@ public class PostgresUpsertStatement {
         this.insertStatement = buildInsertStatement();
         this.upsertStatement = buildUpsertStatement();
 
-        logger.info("PostgresUpsertStatement created: useUpsert={}, batchSize={}, transactionSize={}",
-                useUpsert, batchSize, transactionSize);
+        logger.info("PostgresUpsertStatement created: useUpsert={}, batchSize={}, transactionSize={}", useUpsert,
+                batchSize, transactionSize);
     }
 
     /**
      * Initializes the statement with a database connection.
      *
-     * @param connection the database connection
-     * @throws SQLException if initialization fails
+     * @param connection
+     *            the database connection
+     *
+     * @throws SQLException
+     *             if initialization fails
      */
     public void initialize(Connection connection) throws SQLException {
         this.connection = connection;
@@ -131,8 +138,11 @@ public class PostgresUpsertStatement {
     /**
      * Binds a record to the prepared statement and adds it to the batch.
      *
-     * @param record the record to bind
-     * @throws SQLException if binding fails
+     * @param record
+     *            the record to bind
+     *
+     * @throws SQLException
+     *             if binding fails
      */
     public void addToBatch(Record record) throws SQLException {
         if (preparedStatement == null) {
@@ -152,7 +162,9 @@ public class PostgresUpsertStatement {
      * Executes the current batch of statements.
      *
      * @return array of update counts
-     * @throws SQLException if execution fails
+     *
+     * @throws SQLException
+     *             if execution fails
      */
     public int[] executeBatch() throws SQLException {
         if (currentBatchCount == 0) {
@@ -169,7 +181,8 @@ public class PostgresUpsertStatement {
     /**
      * Clears the current batch without executing.
      *
-     * @throws SQLException if clearing fails
+     * @throws SQLException
+     *             if clearing fails
      */
     public void clearBatch() throws SQLException {
         if (preparedStatement != null) {
@@ -181,7 +194,8 @@ public class PostgresUpsertStatement {
     /**
      * Commits the current transaction.
      *
-     * @throws SQLException if commit fails
+     * @throws SQLException
+     *             if commit fails
      */
     public void commit() throws SQLException {
         if (connection != null && !connection.getAutoCommit()) {
@@ -194,7 +208,8 @@ public class PostgresUpsertStatement {
     /**
      * Rolls back the current transaction.
      *
-     * @throws SQLException if rollback fails
+     * @throws SQLException
+     *             if rollback fails
      */
     public void rollback() throws SQLException {
         if (connection != null && !connection.getAutoCommit()) {
@@ -225,8 +240,11 @@ public class PostgresUpsertStatement {
     /**
      * Sets auto-commit mode.
      *
-     * @param autoCommit the auto-commit setting
-     * @throws SQLException if setting fails
+     * @param autoCommit
+     *            the auto-commit setting
+     *
+     * @throws SQLException
+     *             if setting fails
      */
     public void setAutoCommit(boolean autoCommit) throws SQLException {
         this.autoCommit = autoCommit;
@@ -265,7 +283,8 @@ public class PostgresUpsertStatement {
     /**
      * Closes the prepared statement.
      *
-     * @throws SQLException if closing fails
+     * @throws SQLException
+     *             if closing fails
      */
     public void close() throws SQLException {
         if (preparedStatement != null) {
@@ -299,9 +318,7 @@ public class PostgresUpsertStatement {
 
     private String buildInsertStatement() {
         StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO ")
-                .append(targetTable.getQualifiedTableName())
-                .append(" (");
+        sql.append("INSERT INTO ").append(targetTable.getQualifiedTableName()).append(" (");
 
         // Column list
         for (int i = 0; i < targetColumnNames.size(); i++) {
@@ -377,8 +394,8 @@ public class PostgresUpsertStatement {
                 try {
                     value = originTable.getAndConvertData(originIdx, originRow);
                 } catch (Exception e) {
-                    logger.warn("Failed to get data for column {} at index {}: {}",
-                            targetColumnNames.get(targetIdx), originIdx, e.getMessage());
+                    logger.warn("Failed to get data for column {} at index {}: {}", targetColumnNames.get(targetIdx),
+                            originIdx, e.getMessage());
                 }
 
                 // Convert to PostgreSQL-compatible value
@@ -386,8 +403,8 @@ public class PostgresUpsertStatement {
                     try {
                         value = typeMapper.convertValue(value, originType, connection);
                     } catch (Exception e) {
-                        logger.warn("Failed to convert value for column {}: {}",
-                                targetColumnNames.get(targetIdx), e.getMessage());
+                        logger.warn("Failed to convert value for column {}: {}", targetColumnNames.get(targetIdx),
+                                e.getMessage());
                         value = null;
                     }
                 }
@@ -419,8 +436,8 @@ public class PostgresUpsertStatement {
                 if (isRetryableError(sqlState)) {
                     attempts++;
                     if (attempts < DEFAULT_RETRY_ATTEMPTS) {
-                        logger.warn("Batch execution failed (attempt {}/{}), retrying in {}ms: {}",
-                                attempts, DEFAULT_RETRY_ATTEMPTS, delayMs, e.getMessage());
+                        logger.warn("Batch execution failed (attempt {}/{}), retrying in {}ms: {}", attempts,
+                                DEFAULT_RETRY_ATTEMPTS, delayMs, e.getMessage());
                         try {
                             Thread.sleep(delayMs);
                             delayMs *= 2; // Exponential backoff
