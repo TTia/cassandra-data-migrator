@@ -79,10 +79,10 @@ public class PostgresCopyJobSession extends AbstractJobSession<PartitionRange> {
             throw new RuntimeException("Failed to load PostgreSQL table metadata", e);
         }
 
-        // Initialize PKFactory (for origin side processing)
-        // Target side uses PostgreSQL, so we only need origin PKFactory
+        // PostgreSQL has no CqlTable, so the origin table stands in as the target: PK columns map one to one
         CqlTable cqlTableOrigin = this.originSession.getCqlTable();
-        this.pkFactory = new PKFactory(propertyHelper, cqlTableOrigin, null);
+        cqlTableOrigin.setOtherCqlTable(cqlTableOrigin);
+        this.pkFactory = new PKFactory(propertyHelper, cqlTableOrigin, cqlTableOrigin);
         this.originSession.setPKFactory(pkFactory);
 
         this.fetchSize = cqlTableOrigin.getFetchSizeInRows();

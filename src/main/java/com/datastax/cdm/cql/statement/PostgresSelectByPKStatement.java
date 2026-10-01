@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory;
 import com.datastax.cdm.data.EnhancedPK;
 import com.datastax.cdm.schema.CqlTable;
 import com.datastax.cdm.schema.PostgresTable;
+import com.datastax.cdm.schema.PostgresTypeMapper;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Executes SELECT queries against PostgreSQL to fetch records by primary key. Used for validation/diff operations to
@@ -43,6 +45,7 @@ public class PostgresSelectByPKStatement {
     private final CqlTable originTable;
     private final String selectStatement;
     private final List<String> primaryKeyColumns;
+    private final PostgresTypeMapper typeMapper = new PostgresTypeMapper();
 
     /**
      * Creates a new PostgresSelectByPKStatement.
@@ -76,7 +79,7 @@ public class PostgresSelectByPKStatement {
      */
     public Map<String, Object> getRecord(Connection connection, EnhancedPK pk) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(selectStatement)) {
-            bindPrimaryKey(stmt, pk);
+            bindPrimaryKey(stmt, pk, connection);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -105,7 +108,7 @@ public class PostgresSelectByPKStatement {
                 + " LIMIT 1";
 
         try (PreparedStatement stmt = connection.prepareStatement(existsQuery)) {
-            bindPrimaryKey(stmt, pk);
+            bindPrimaryKey(stmt, pk, connection);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next();
@@ -163,7 +166,7 @@ public class PostgresSelectByPKStatement {
         return where.toString();
     }
 
-    private void bindPrimaryKey(PreparedStatement stmt, EnhancedPK pk) throws SQLException {
+    private void bindPrimaryKey(PreparedStatement stmt, EnhancedPK pk, Connection connection) throws SQLException {
         List<Object> pkValues = pk.getPKValues();
 
         // Map Cassandra PK values to PostgreSQL PK columns
@@ -172,19 +175,22 @@ public class PostgresSelectByPKStatement {
         for (int i = 0; i < primaryKeyColumns.size(); i++) {
             String targetPKCol = primaryKeyColumns.get(i);
             Object value = null;
+            DataType originType = null;
 
             // Find corresponding origin PK value
             for (int j = 0; j < originPKNames.size(); j++) {
                 if (originPKNames.get(j).equalsIgnoreCase(targetPKCol)) {
                     if (j < pkValues.size()) {
                         value = pkValues.get(j);
+                        originType = originTable.getDataType(originPKNames.get(j));
                     }
                     break;
                 }
             }
 
             if (value != null) {
-                stmt.setObject(i + 1, value);
+                // Same conversion as the upsert, so a timestamp key binds as OffsetDateTime, not Instant
+                stmt.setObject(i + 1, typeMapper.convertValue(value, originType, connection));
             } else {
                 stmt.setNull(i + 1, java.sql.Types.NULL);
             }

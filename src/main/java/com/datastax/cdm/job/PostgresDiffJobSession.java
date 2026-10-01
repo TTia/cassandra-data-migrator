@@ -101,9 +101,10 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
             throw new RuntimeException("Failed to load PostgreSQL table metadata", e);
         }
 
-        // Initialize PKFactory and select statement
+        // PostgreSQL has no CqlTable, so the origin table stands in as the target: PK columns map one to one
         CqlTable cqlTableOrigin = this.originSession.getCqlTable();
-        this.pkFactory = new PKFactory(propertyHelper, cqlTableOrigin, null);
+        cqlTableOrigin.setOtherCqlTable(cqlTableOrigin);
+        this.pkFactory = new PKFactory(propertyHelper, cqlTableOrigin, cqlTableOrigin);
         this.originSession.setPKFactory(pkFactory);
         this.selectByPKStatement = new PostgresSelectByPKStatement(postgresTable, cqlTableOrigin);
 
@@ -363,6 +364,12 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
             return java.util.Arrays.equals((byte[]) origin, (byte[]) target);
         }
 
+        // PgJDBC returns java.sql.Timestamp while the origin side is an OffsetDateTime: compare the instants
+        java.time.Instant originInstant = toInstant(origin), targetInstant = toInstant(target);
+        if (originInstant != null && targetInstant != null) {
+            return originInstant.equals(targetInstant);
+        }
+
         // Handle numeric comparison with tolerance
         if (origin instanceof Number && target instanceof Number) {
             double originVal = ((Number) origin).doubleValue();
@@ -372,6 +379,19 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
 
         // String comparison
         return Objects.equals(origin.toString(), target.toString());
+    }
+
+    private static java.time.Instant toInstant(Object value) {
+        if (value instanceof java.time.Instant) {
+            return (java.time.Instant) value;
+        }
+        if (value instanceof java.time.OffsetDateTime) {
+            return ((java.time.OffsetDateTime) value).toInstant();
+        }
+        if (value instanceof java.sql.Timestamp) {
+            return ((java.sql.Timestamp) value).toInstant();
+        }
+        return null;
     }
 
     /**
