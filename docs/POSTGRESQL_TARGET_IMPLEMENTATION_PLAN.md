@@ -520,10 +520,10 @@ src/main/java/com/datastax/cdm/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can connect to PostgreSQL with connection pooling
-- [ ] Can discover table schema from information_schema
-- [ ] Can map all primitive Cassandra types to PostgreSQL
-- [ ] Unit tests pass with >80% coverage
+- [x] Can connect to PostgreSQL with connection pooling
+- [x] Can discover table schema from information_schema
+- [x] Can map all primitive Cassandra types to PostgreSQL
+- [x] Unit tests pass with >80% coverage
 
 ### Phase 2: Statement Building & Execution (Weeks 3-4)
 
@@ -540,11 +540,11 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can generate correct INSERT statements
-- [ ] Can generate correct UPSERT (ON CONFLICT) statements
-- [ ] Batch execution works with configurable sizes
-- [ ] Transactions commit/rollback correctly
-- [ ] Retry logic handles transient failures
+- [x] Can generate correct INSERT statements
+- [x] Can generate correct UPSERT (ON CONFLICT) statements
+- [x] Batch execution works with configurable sizes
+- [x] Transactions commit/rollback correctly
+- [x] Retry logic handles transient failures
 
 ### Phase 3: Job Session Integration (Weeks 5-6)
 
@@ -565,10 +565,10 @@ src/main/scala/com/datastax/cdm/job/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can migrate data from Cassandra to PostgreSQL
-- [ ] Features work (ConstantColumns, ExplodeMap, ExtractJson)
-- [ ] Rate limiting applies to PostgreSQL writes
-- [ ] Progress tracking works correctly
+- [x] Can migrate data from Cassandra to PostgreSQL
+- [x] Features work (ConstantColumns, ExplodeMap, ExtractJson)
+- [x] Rate limiting applies to PostgreSQL writes
+- [x] Progress tracking works correctly
 
 ### Phase 4: Complex Type Support (Week 7)
 
@@ -586,10 +586,10 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] LIST columns migrate to PostgreSQL ARRAY
-- [ ] SET columns migrate to PostgreSQL ARRAY (deduplicated)
-- [ ] MAP columns migrate to JSONB
-- [ ] UDT columns migrate to JSONB
+- [x] LIST columns migrate to PostgreSQL ARRAY
+- [x] SET columns migrate to PostgreSQL ARRAY (deduplicated)
+- [x] MAP columns migrate to JSONB
+- [x] UDT columns migrate to JSONB
 
 ### Phase 5: Validation & Diff Support (Weeks 8-9)
 
@@ -608,9 +608,9 @@ src/main/java/com/datastax/cdm/cql/statement/
 ```
 
 **Acceptance Criteria:**
-- [ ] Can validate migrated data matches source
-- [ ] Diff reports show missing/different records
-- [ ] Supports primary key lookups on PostgreSQL
+- [x] Can validate migrated data matches source
+- [x] Diff reports show missing/different records
+- [x] Supports primary key lookups on PostgreSQL
 
 ### Phase 6: Testing & Documentation (Week 10)
 
@@ -636,10 +636,10 @@ docs/
 ```
 
 **Acceptance Criteria:**
-- [ ] All integration tests pass
-- [ ] Performance meets baseline targets
-- [ ] Documentation complete and reviewed
-- [ ] Example configurations provided
+- [x] All integration tests pass
+- [x] Performance meets baseline targets
+- [x] Documentation complete and reviewed
+- [x] Example configurations provided
 
 ---
 

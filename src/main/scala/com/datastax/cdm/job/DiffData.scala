@@ -19,10 +19,24 @@ import com.datastax.cdm.feature.TrackRun
 import com.datastax.cdm.data.PKFactory.Side
 import com.datastax.cdm.properties.KnownProperties
 import com.datastax.cdm.job.IJobSessionFactory.JobType
+import org.apache.spark.SparkConf
 
 object DiffData extends BasePartitionJob {
   jobType = JobType.VALIDATE
-  setup("Data Validation Job", new DiffJobSessionFactory())
+
+  // Determine the appropriate factory based on target type configuration
+  private def getJobFactory(): IJobSessionFactory[PartitionRange] = {
+    val conf = new SparkConf()
+    val targetType = conf.get("spark.cdm.connect.target.type", "cassandra")
+
+    if ("postgres".equalsIgnoreCase(targetType) || "postgresql".equalsIgnoreCase(targetType)) {
+      new PostgresDiffJobSessionFactory()
+    } else {
+      new DiffJobSessionFactory()
+    }
+  }
+
+  setup("Data Validation Job", getJobFactory())
   execute()
   finish()
     

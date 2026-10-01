@@ -20,10 +20,24 @@ import com.datastax.cdm.job.CDMMetricsAccumulator
 import com.datastax.cdm.data.PKFactory.Side
 import com.datastax.cdm.properties.KnownProperties
 import com.datastax.cdm.job.IJobSessionFactory.JobType
+import org.apache.spark.SparkConf
 
 object Migrate extends BasePartitionJob {
   jobType = JobType.MIGRATE
-  setup("Migrate Job", new CopyJobSessionFactory())
+
+  // Determine the appropriate factory based on target type configuration
+  private def getJobFactory(): IJobSessionFactory[PartitionRange] = {
+    val conf = new SparkConf()
+    val targetType = conf.get("spark.cdm.connect.target.type", "cassandra")
+
+    if ("postgres".equalsIgnoreCase(targetType) || "postgresql".equalsIgnoreCase(targetType)) {
+      new PostgresCopyJobSessionFactory()
+    } else {
+      new CopyJobSessionFactory()
+    }
+  }
+
+  setup("Migrate Job", getJobFactory())
   execute()
   finish()
   

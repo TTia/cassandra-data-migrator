@@ -33,3 +33,5 @@ PERF/testing.txt
 PERF/cdm-v4.properties
 PERF/cgpt.yaml
 PERF/cql-iot.yaml
+CLAUDE.md
+docs/*.md
