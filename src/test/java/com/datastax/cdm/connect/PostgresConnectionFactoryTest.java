@@ -23,7 +23,6 @@ import java.sql.SQLException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -34,8 +33,7 @@ import org.testcontainers.utility.DockerImageName;
 import com.datastax.cdm.properties.IPropertyHelper;
 import com.datastax.cdm.properties.KnownProperties;
 
-@Testcontainers
-@EnabledIfEnvironmentVariable(named = "RUN_INTEGRATION_TESTS", matches = "true")
+@Testcontainers(disabledWithoutDocker = true)
 public class PostgresConnectionFactoryTest {
 
     private static final String TIMESCALE_IMAGE = "timescale/timescaledb:latest-pg16";

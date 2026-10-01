@@ -32,7 +32,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.postgresql.util.PGobject;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -48,8 +47,7 @@ import com.datastax.oss.driver.api.core.type.DataTypes;
  *
  * Run with: mvn test -Dtest=CassandraToPostgresIntegrationTest -DskipUnitTests=true
  */
-@Testcontainers
-@EnabledIfEnvironmentVariable(named = "RUN_INTEGRATION_TESTS", matches = "true")
+@Testcontainers(disabledWithoutDocker = true)
 public class CassandraToPostgresIntegrationTest {
 
     private static final String TIMESCALE_IMAGE = "timescale/timescaledb:latest-pg16";
