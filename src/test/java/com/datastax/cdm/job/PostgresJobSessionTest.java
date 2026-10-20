@@ -136,6 +136,8 @@ public class PostgresJobSessionTest {
         assertEquals(1, counter.getCount(CounterType.PARTITIONS_PASSED));
     }
 
+    // Each device's rows arrive in ts order with values 0, 1, 2, so value 2 is always the third row and lands in the
+    // second batch of 2
     @Test
     void migrate_failingBatch_failsPartitionAndCountsOnlyCommittedRows() throws SQLException {
         pg("ALTER TABLE readings ADD CONSTRAINT no_two CHECK (value <> 2)");
@@ -144,9 +146,27 @@ public class PostgresJobSessionTest {
 
             assertEquals(1, counter.getCount(CounterType.PARTITIONS_FAILED));
             assertEquals(0, counter.getCount(CounterType.PARTITIONS_PASSED));
-            assertEquals(targetReadings().size(), counter.getCount(CounterType.WRITE));
+            // transactionSize 2: the first batch was committed before the second failed
+            assertEquals(2, counter.getCount(CounterType.WRITE));
+            assertEquals(2, targetReadings().size());
             assertEquals(counter.getCount(CounterType.READ) - counter.getCount(CounterType.WRITE),
                     counter.getCount(CounterType.ERROR));
+        } finally {
+            pg("ALTER TABLE readings DROP CONSTRAINT no_two");
+        }
+    }
+
+    @Test
+    void migrate_failingBatch_rollsBackBatchesExecutedButNotCommitted() throws SQLException {
+        pg("ALTER TABLE readings ADD CONSTRAINT no_two CHECK (value <> 2)");
+        try {
+            // transactionSize 4: the first batch has run but is not committed when the second fails
+            JobCounter counter = migrate(readings("spark.cdm.connect.target.postgres.transactionSize", "4"))
+                    .getJobCounter();
+
+            assertEquals(1, counter.getCount(CounterType.PARTITIONS_FAILED));
+            assertEquals(0, counter.getCount(CounterType.WRITE));
+            assertEquals(0, targetReadings().size());
         } finally {
             pg("ALTER TABLE readings DROP CONSTRAINT no_two");
         }
