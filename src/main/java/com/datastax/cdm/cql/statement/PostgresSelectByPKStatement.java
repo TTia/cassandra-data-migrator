@@ -65,6 +65,16 @@ public class PostgresSelectByPKStatement {
             throw new IllegalStateException("Validation looks rows up by primary key, and "
                     + targetTable.getQualifiedTableName() + " has none");
         }
+        // A key column the origin cannot fill would be looked up as NULL: every row MISSING, and autocorrect
+        // inserting a duplicate of each
+        List<String> originPKNames = getOriginPKNames();
+        for (String pk : primaryKeyColumns) {
+            if (originPKNames.stream().noneMatch(pk::equalsIgnoreCase)) {
+                throw new IllegalStateException(
+                        "Validation looks rows up by the primary key of " + targetTable.getQualifiedTableName()
+                                + ", and its column " + pk + " is not a key column of the origin table");
+            }
+        }
         List<String> columns = mapping.getColumns();
         for (int i = 0; i < columns.size(); i++) {
             if (!primaryKeyColumns.contains(columns.get(i))) {

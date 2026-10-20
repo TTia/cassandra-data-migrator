@@ -120,6 +120,7 @@ public class PostgresSelectByPKStatementTest {
     @Test
     public void selectStatement_withMultiplePKColumns() {
         when(targetTable.getPrimaryKeyColumns()).thenReturn(Arrays.asList("id", "partition_id"));
+        when(originTable.getPKNames(false)).thenReturn(Arrays.asList("id", "partition_id"));
 
         PostgresSelectByPKStatement statement = new PostgresSelectByPKStatement(targetTable, originTable);
 
@@ -131,6 +132,17 @@ public class PostgresSelectByPKStatementTest {
         when(targetTable.getPrimaryKeyColumns()).thenReturn(Collections.emptyList());
 
         assertThrows(IllegalStateException.class, () -> new PostgresSelectByPKStatement(targetTable, originTable));
+    }
+
+    @Test
+    public void constructor_withKeyColumnMissingFromOriginKey_failsFast() {
+        // A PostgreSQL-generated key, such as a bigserial id, has no origin value to look the row up by
+        when(targetTable.getPrimaryKeyColumns()).thenReturn(Collections.singletonList("row_id"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> new PostgresSelectByPKStatement(targetTable, originTable));
+
+        assertTrue(e.getMessage().contains("row_id"));
     }
 
     @Test
@@ -193,6 +205,7 @@ public class PostgresSelectByPKStatementTest {
     public void getPrimaryKeyColumns_returnsConfiguredColumns() {
         List<String> pkCols = Arrays.asList("id", "tenant_id");
         when(targetTable.getPrimaryKeyColumns()).thenReturn(pkCols);
+        when(originTable.getPKNames(false)).thenReturn(pkCols);
 
         PostgresSelectByPKStatement statement = new PostgresSelectByPKStatement(targetTable, originTable);
 
