@@ -89,8 +89,8 @@ public class PostgresConnectionFactory implements AutoCloseable {
         // Pool name for monitoring
         config.setPoolName("CDM-PostgreSQL-Pool");
 
-        logger.info("Creating PostgreSQL connection pool: url={}, schema={}, table={}, poolSize={}", jdbcUrl, schema,
-                table, config.getMaximumPoolSize());
+        logger.info("Creating PostgreSQL connection pool: url={}, schema={}, table={}, poolSize={}",
+                maskPassword(jdbcUrl), schema, table, config.getMaximumPoolSize());
 
         this.dataSource = new HikariDataSource(config);
     }
@@ -105,6 +105,11 @@ public class PostgresConnectionFactory implements AutoCloseable {
      */
     public Connection getConnection() throws SQLException {
         return dataSource.getConnection();
+    }
+
+    // The URL may carry the password as a query parameter, so it is masked before it is logged
+    static String maskPassword(String jdbcUrl) {
+        return jdbcUrl.replaceAll("(?i)(password=)[^&;]*", "$1***");
     }
 
     /**

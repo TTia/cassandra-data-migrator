@@ -219,25 +219,6 @@ public class PostgresTable {
     }
 
     /**
-     * Checks if the table has ON CONFLICT support (PostgreSQL 9.5+).
-     *
-     * @param connection
-     *            the database connection
-     *
-     * @return true if ON CONFLICT is supported
-     */
-    public boolean hasOnConflictSupport(Connection connection) {
-        try {
-            int majorVersion = connection.getMetaData().getDatabaseMajorVersion();
-            int minorVersion = connection.getMetaData().getDatabaseMinorVersion();
-            return majorVersion > 9 || (majorVersion == 9 && minorVersion >= 5);
-        } catch (SQLException e) {
-            logger.warn("Could not determine PostgreSQL version, assuming ON CONFLICT support", e);
-            return true;
-        }
-    }
-
-    /**
      * Returns the SQL type constant for a column.
      *
      * @param columnIndex
