@@ -194,6 +194,21 @@ public class PostgresJobSessionTest {
     }
 
     @Test
+    void typedColumns_validate_comparesEveryColumnExactly() throws SQLException {
+        migrate(typed());
+
+        JobCounter equal = validate(typed()).getJobCounter();
+        assertEquals(2, equal.getCount(CounterType.VALID));
+        assertEquals(0, equal.getCount(CounterType.MISMATCH));
+
+        // 2^53 + 1 and 2^53 are the same double, so only an exact compare sees this change
+        pg("UPDATE \"Typed\" SET big = big - 1 WHERE id = 1");
+        JobCounter changed = validate(typed()).getJobCounter();
+        assertEquals(1, changed.getCount(CounterType.MISMATCH));
+        assertEquals(1, changed.getCount(CounterType.VALID));
+    }
+
+    @Test
     void migrate_valueThatCannotBeConverted_failsPartitionInsteadOfWritingNull() throws SQLException {
         // jsonb cannot store NaN. The cast picks the positional overload over the named-values Map one
         cql.execute(SimpleStatement.newInstance("INSERT INTO ks.typed (id, scores) VALUES (3, ?)",

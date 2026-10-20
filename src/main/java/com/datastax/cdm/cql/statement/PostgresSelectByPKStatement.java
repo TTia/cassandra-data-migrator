@@ -20,31 +20,33 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.datastax.cdm.data.EnhancedPK;
+import com.datastax.cdm.data.Record;
 import com.datastax.cdm.schema.CqlTable;
 import com.datastax.cdm.schema.PostgresTable;
 import com.datastax.cdm.schema.PostgresTypeMapper;
 import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
- * Executes SELECT queries against PostgreSQL to fetch records by primary key. Used for validation/diff operations to
- * compare Cassandra data with PostgreSQL data.
+ * Looks up the PostgreSQL row for an origin record and compares it with the origin values. The compare runs in
+ * PostgreSQL: each origin value is bound exactly as the upsert binds it and tested with {@code IS NOT DISTINCT FROM},
+ * so a column compares equal exactly when writing the origin value again would not change it.
  */
 public class PostgresSelectByPKStatement {
 
     private static final Logger logger = LoggerFactory.getLogger(PostgresSelectByPKStatement.class);
 
-    private final PostgresTable targetTable;
     private final CqlTable originTable;
-    private final String selectStatement;
+    private final PostgresColumnMapping mapping;
     private final List<String> primaryKeyColumns;
+    // Indexes into the mapping of the non-PK columns that are compared
+    private final List<Integer> compared = new ArrayList<>();
+    private final String selectStatement;
     private final PostgresTypeMapper typeMapper = new PostgresTypeMapper();
 
     /**
@@ -56,62 +58,64 @@ public class PostgresSelectByPKStatement {
      *            the Cassandra origin table (for column mapping)
      */
     public PostgresSelectByPKStatement(PostgresTable targetTable, CqlTable originTable) {
-        this.targetTable = targetTable;
         this.originTable = originTable;
+        this.mapping = new PostgresColumnMapping(targetTable, originTable, typeMapper);
         this.primaryKeyColumns = targetTable.getPrimaryKeyColumns();
-        this.selectStatement = buildSelectStatement();
+        if (primaryKeyColumns.isEmpty()) {
+            throw new IllegalStateException("Validation looks rows up by primary key, and "
+                    + targetTable.getQualifiedTableName() + " has none");
+        }
+        List<String> columns = mapping.getColumns();
+        for (int i = 0; i < columns.size(); i++) {
+            if (!primaryKeyColumns.contains(columns.get(i))) {
+                compared.add(i);
+            }
+        }
+        this.selectStatement = buildSelectStatement(targetTable);
 
         logger.debug("PostgresSelectByPKStatement created: {}", selectStatement);
     }
 
     /**
-     * Gets a record from PostgreSQL by primary key.
+     * Compares an origin record with its PostgreSQL row.
      *
      * @param connection
      *            the database connection
-     * @param pk
-     *            the enhanced primary key
+     * @param record
+     *            the origin record
      *
-     * @return a map of column name to value, or null if not found
+     * @return null when the row is missing, otherwise one {@code column origin[..] target[..]} entry per column that
+     *         differs (empty when the row matches)
      *
      * @throws SQLException
-     *             if query fails
+     *             if an origin value cannot be converted or the query fails
      */
-    public Map<String, Object> getRecord(Connection connection, EnhancedPK pk) throws SQLException {
+    public List<String> findMismatches(Connection connection, Record record) throws SQLException {
+        List<Object> originValues = new ArrayList<>();
         try (PreparedStatement stmt = connection.prepareStatement(selectStatement)) {
-            bindPrimaryKey(stmt, pk, connection);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return extractRow(rs);
+            for (int i = 0; i < compared.size(); i++) {
+                Object value = mapping.value(compared.get(i), record.getOriginRow(), connection);
+                originValues.add(value);
+                if (value == null) {
+                    stmt.setNull(i + 1, java.sql.Types.NULL);
+                } else {
+                    stmt.setObject(i + 1, value);
                 }
-                return null;
             }
-        }
-    }
-
-    /**
-     * Checks if a record exists in PostgreSQL by primary key.
-     *
-     * @param connection
-     *            the database connection
-     * @param pk
-     *            the enhanced primary key
-     *
-     * @return true if the record exists
-     *
-     * @throws SQLException
-     *             if query fails
-     */
-    public boolean recordExists(Connection connection, EnhancedPK pk) throws SQLException {
-        String existsQuery = "SELECT 1 FROM " + targetTable.getQualifiedTableName() + " WHERE " + buildWhereClause()
-                + " LIMIT 1";
-
-        try (PreparedStatement stmt = connection.prepareStatement(existsQuery)) {
-            bindPrimaryKey(stmt, pk, connection);
+            bindPrimaryKey(stmt, record.getPk(), connection, compared.size());
 
             try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next();
+                if (!rs.next()) {
+                    return null;
+                }
+                List<String> mismatches = new ArrayList<>();
+                for (int i = 0; i < compared.size(); i++) {
+                    if (!rs.getBoolean(2 * i + 2)) {
+                        mismatches.add(mapping.getColumns().get(compared.get(i)) + " origin[" + originValues.get(i)
+                                + "] target[" + rs.getString(2 * i + 1) + "]");
+                    }
+                }
+                return mismatches;
             }
         }
     }
@@ -136,37 +140,26 @@ public class PostgresSelectByPKStatement {
 
     // ==================== Private Methods ====================
 
-    private String buildSelectStatement() {
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-
-        // Column list
-        List<String> columns = targetTable.getColumnNames();
-        for (int i = 0; i < columns.size(); i++) {
-            if (i > 0) {
-                sql.append(", ");
-            }
-            sql.append(quoteIdentifier(columns.get(i)));
+    // shortcut: the parameter keeps the type the upsert binds, so a column whose type has no equality operator with
+    // it (json, or a CQL type that only converts to the column type on assignment) fails the partition with an SQL
+    // error; cast the parameter to the column type if a real schema needs it
+    private String buildSelectStatement(PostgresTable targetTable) {
+        List<String> selected = new ArrayList<>();
+        for (int i : compared) {
+            String column = PostgresTable.quoteIdentifier(mapping.getColumns().get(i));
+            selected.add(column);
+            selected.add("(" + column + " IS NOT DISTINCT FROM ?)");
         }
-
-        sql.append(" FROM ").append(targetTable.getQualifiedTableName());
-        sql.append(" WHERE ").append(buildWhereClause());
-
-        return sql.toString();
+        List<String> where = new ArrayList<>();
+        for (String pk : primaryKeyColumns) {
+            where.add(PostgresTable.quoteIdentifier(pk) + " = ?");
+        }
+        return "SELECT " + (selected.isEmpty() ? "1" : String.join(", ", selected)) + " FROM "
+                + targetTable.getQualifiedTableName() + " WHERE " + String.join(" AND ", where);
     }
 
-    private String buildWhereClause() {
-        StringBuilder where = new StringBuilder();
-        for (int i = 0; i < primaryKeyColumns.size(); i++) {
-            if (i > 0) {
-                where.append(" AND ");
-            }
-            where.append(quoteIdentifier(primaryKeyColumns.get(i))).append(" = ?");
-        }
-        return where.toString();
-    }
-
-    private void bindPrimaryKey(PreparedStatement stmt, EnhancedPK pk, Connection connection) throws SQLException {
+    private void bindPrimaryKey(PreparedStatement stmt, EnhancedPK pk, Connection connection, int offset)
+            throws SQLException {
         List<Object> pkValues = pk.getPKValues();
 
         // Map Cassandra PK values to PostgreSQL PK columns
@@ -190,9 +183,9 @@ public class PostgresSelectByPKStatement {
 
             if (value != null) {
                 // Same conversion as the upsert, so a timestamp key binds as OffsetDateTime, not Instant
-                stmt.setObject(i + 1, typeMapper.convertValue(value, originType, connection));
+                stmt.setObject(offset + i + 1, typeMapper.convertValue(value, originType, connection));
             } else {
-                stmt.setNull(i + 1, java.sql.Types.NULL);
+                stmt.setNull(offset + i + 1, java.sql.Types.NULL);
             }
         }
     }
@@ -217,22 +210,5 @@ public class PostgresSelectByPKStatement {
             logger.debug("Could not get full PK names, using partition keys only");
         }
         return pkNames;
-    }
-
-    private Map<String, Object> extractRow(ResultSet rs) throws SQLException {
-        Map<String, Object> row = new HashMap<>();
-        List<String> columns = targetTable.getColumnNames();
-
-        for (int i = 0; i < columns.size(); i++) {
-            String colName = columns.get(i);
-            Object value = rs.getObject(i + 1);
-            row.put(colName, value);
-        }
-
-        return row;
-    }
-
-    private String quoteIdentifier(String identifier) {
-        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 }

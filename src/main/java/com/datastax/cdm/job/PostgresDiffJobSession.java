@@ -19,8 +19,6 @@ import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.logging.log4j.ThreadContext;
@@ -42,7 +40,6 @@ import com.datastax.cdm.schema.PostgresTypeMapper;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
-import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Job session for validating data between Cassandra origin and PostgreSQL target. Compares records and optionally
@@ -60,11 +57,6 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
 
     protected final Boolean autoCorrectMissing;
     protected final Boolean autoCorrectMismatch;
-
-    // Column metadata for comparison
-    private final List<String> targetColumnNames;
-    private final List<String> originColumnNames;
-    private final List<DataType> originColumnTypes;
 
     /**
      * Creates a new PostgresDiffJobSession.
@@ -108,11 +100,6 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
         this.originSession.setPKFactory(pkFactory);
         this.selectByPKStatement = new PostgresSelectByPKStatement(postgresTable, cqlTableOrigin);
 
-        // Store column metadata for comparison
-        this.targetColumnNames = postgresTable.getColumnNames();
-        this.originColumnNames = cqlTableOrigin.getColumnNames(false);
-        this.originColumnTypes = cqlTableOrigin.getColumnCqlTypes();
-
         logger.info("PostgresDiffJobSession initialized:");
         logger.info("  Origin: {}", cqlTableOrigin.getKeyspaceTable());
         logger.info("  Target: {}", postgresTable.getQualifiedTableName());
@@ -154,6 +141,7 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
                 OriginSelectByPartitionRangeStatement originSelectStatement = originSession
                         .getOriginSelectByPartitionRangeStatement();
                 ResultSet resultSet = originSelectStatement.execute(originSelectStatement.bind(min, max));
+                long correctedMissing = 0, correctedMismatch = 0;
 
                 for (Row originRow : resultSet) {
                     rateLimiterOrigin.acquire(1);
@@ -168,50 +156,26 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
                     for (Record r : pkFactory.toValidRecordList(record)) {
                         rateLimiterTarget.acquire(1);
 
-                        // Get target row from PostgreSQL
-                        Map<String, Object> targetRow = selectByPKStatement.getRecord(connection, r.getPk());
-
-                        if (targetRow == null) {
-                            // Missing in target
+                        List<String> mismatches = selectByPKStatement.findMismatches(connection, r);
+                        if (mismatches == null) {
                             jobCounter.increment(JobCounter.CounterType.MISSING);
                             logger.error("Missing target row found for key: {}", r.getPk());
                             hasDiff.set(true);
-
-                            if (autoCorrectMissing && upsertStatement != null) {
-                                try {
-                                    upsertStatement.addToBatch(r);
-                                    if (upsertStatement.shouldExecuteBatch()) {
-                                        upsertStatement.executeBatch();
-                                    }
-                                    jobCounter.increment(JobCounter.CounterType.CORRECTED_MISSING);
-                                    logger.info("Inserted missing row in target: {}", r.getPk());
-                                } catch (SQLException e) {
-                                    logger.error("Failed to insert missing row: {}", e.getMessage());
-                                }
+                            if (autoCorrectMissing) {
+                                addCorrection(upsertStatement, r);
+                                correctedMissing++;
+                            }
+                        } else if (!mismatches.isEmpty()) {
+                            jobCounter.increment(JobCounter.CounterType.MISMATCH);
+                            logger.error("Mismatch row found for key: {} Mismatch: {}", r.getPk(),
+                                    String.join("; ", mismatches));
+                            hasDiff.set(true);
+                            if (autoCorrectMismatch) {
+                                addCorrection(upsertStatement, r);
+                                correctedMismatch++;
                             }
                         } else {
-                            // Compare values
-                            String diffData = compareRows(originRow, targetRow, r.getPk());
-                            if (!diffData.isEmpty()) {
-                                jobCounter.increment(JobCounter.CounterType.MISMATCH);
-                                logger.error("Mismatch row found for key: {} Mismatch: {}", r.getPk(), diffData);
-                                hasDiff.set(true);
-
-                                if (autoCorrectMismatch && upsertStatement != null) {
-                                    try {
-                                        upsertStatement.addToBatch(r);
-                                        if (upsertStatement.shouldExecuteBatch()) {
-                                            upsertStatement.executeBatch();
-                                        }
-                                        jobCounter.increment(JobCounter.CounterType.CORRECTED_MISMATCH);
-                                        logger.info("Corrected mismatch row in target: {}", r.getPk());
-                                    } catch (SQLException e) {
-                                        logger.error("Failed to correct mismatch row: {}", e.getMessage());
-                                    }
-                                }
-                            } else {
-                                jobCounter.increment(JobCounter.CounterType.VALID);
-                            }
+                            jobCounter.increment(JobCounter.CounterType.VALID);
                         }
                     }
                 }
@@ -221,6 +185,9 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
                     upsertStatement.executeBatch();
                     upsertStatement.commit();
                 }
+                // Counted only now, so a failed partition never reports a correction that was rolled back
+                jobCounter.increment(JobCounter.CounterType.CORRECTED_MISSING, correctedMissing);
+                jobCounter.increment(JobCounter.CounterType.CORRECTED_MISMATCH, correctedMismatch);
 
                 jobCounter.increment(JobCounter.CounterType.PARTITIONS_PASSED);
                 jobCounter.flush();
@@ -266,132 +233,11 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
         }
     }
 
-    /**
-     * Compares an origin Cassandra row with a PostgreSQL target row.
-     *
-     * @param originRow
-     *            the Cassandra row
-     * @param targetRow
-     *            the PostgreSQL row as a map
-     * @param pk
-     *            the primary key for logging
-     *
-     * @return a string describing the differences, or empty if equal
-     */
-    private String compareRows(Row originRow, Map<String, Object> targetRow, Object pk) {
-        StringBuilder diffData = new StringBuilder();
-
-        for (String targetColName : targetColumnNames) {
-            // Find corresponding origin column
-            int originIndex = -1;
-            for (int i = 0; i < originColumnNames.size(); i++) {
-                if (originColumnNames.get(i).equalsIgnoreCase(targetColName)) {
-                    originIndex = i;
-                    break;
-                }
-            }
-
-            if (originIndex < 0) {
-                // Column doesn't exist in origin, skip
-                continue;
-            }
-
-            try {
-                Object originValue = originSession.getCqlTable().getData(originIndex, originRow);
-                Object targetValue = targetRow.get(targetColName);
-
-                // Convert origin value to PostgreSQL-compatible type for comparison
-                DataType originType = originColumnTypes.get(originIndex);
-                Object convertedOriginValue = null;
-                if (originValue != null) {
-                    try {
-                        // Convert for comparison - don't need connection for simple comparisons
-                        convertedOriginValue = convertForComparison(originValue, originType);
-                    } catch (Exception e) {
-                        convertedOriginValue = originValue;
-                    }
-                }
-
-                // Compare values
-                if (!valuesEqual(convertedOriginValue, targetValue)) {
-                    diffData.append("Column:").append(targetColName).append("-origin[").append(originValue)
-                            .append("]-target[").append(targetValue).append("]; ");
-                }
-            } catch (Exception e) {
-                diffData.append("Column:").append(targetColName).append(" Exception comparing values: ")
-                        .append(e.getMessage()).append("; ");
-            }
+    private static void addCorrection(PostgresUpsertStatement upsertStatement, Record record) throws SQLException {
+        upsertStatement.addToBatch(record);
+        if (upsertStatement.shouldExecuteBatch()) {
+            upsertStatement.executeBatch();
         }
-
-        return diffData.toString();
-    }
-
-    /**
-     * Converts a Cassandra value for comparison with PostgreSQL value.
-     */
-    private Object convertForComparison(Object value, DataType type) {
-        if (value == null) {
-            return null;
-        }
-
-        // Handle common type conversions for comparison
-        if (value instanceof java.time.Instant) {
-            return typeMapper.convertTimestamp((java.time.Instant) value);
-        }
-        if (value instanceof java.nio.ByteBuffer) {
-            return typeMapper.convertBlob((java.nio.ByteBuffer) value);
-        }
-        if (value instanceof java.math.BigInteger) {
-            return new java.math.BigDecimal((java.math.BigInteger) value);
-        }
-
-        return value;
-    }
-
-    /**
-     * Compares two values for equality, handling nulls and type differences.
-     */
-    private boolean valuesEqual(Object origin, Object target) {
-        if (origin == null && target == null) {
-            return true;
-        }
-        if (origin == null || target == null) {
-            return false;
-        }
-
-        // Handle byte array comparison
-        if (origin instanceof byte[] && target instanceof byte[]) {
-            return java.util.Arrays.equals((byte[]) origin, (byte[]) target);
-        }
-
-        // PgJDBC returns java.sql.Timestamp while the origin side is an OffsetDateTime: compare the instants
-        java.time.Instant originInstant = toInstant(origin), targetInstant = toInstant(target);
-        if (originInstant != null && targetInstant != null) {
-            return originInstant.equals(targetInstant);
-        }
-
-        // Handle numeric comparison with tolerance
-        if (origin instanceof Number && target instanceof Number) {
-            double originVal = ((Number) origin).doubleValue();
-            double targetVal = ((Number) target).doubleValue();
-            return Math.abs(originVal - targetVal) < 0.0001;
-        }
-
-        // String comparison
-        return Objects.equals(origin.toString(), target.toString());
-    }
-
-    private static java.time.Instant toInstant(Object value) {
-        if (value instanceof java.time.Instant) {
-            return (java.time.Instant) value;
-        }
-        if (value instanceof java.time.OffsetDateTime) {
-            return ((java.time.OffsetDateTime) value).toInstant();
-        }
-        if (value instanceof java.sql.Timestamp) {
-            return ((java.sql.Timestamp) value).toInstant();
-        }
-        return null;
     }
 
     /**
