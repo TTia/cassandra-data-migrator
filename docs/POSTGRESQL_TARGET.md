@@ -9,6 +9,7 @@ The Cassandra Data Migrator (CDM) supports PostgreSQL as a target database, enab
 - [Configuration](#configuration)
 - [Type Mapping](#type-mapping)
 - [Performance Tuning](#performance-tuning)
+- [Failure Handling](#failure-handling)
 - [Validation Mode](#validation-mode)
 - [Troubleshooting](#troubleshooting)
 
@@ -40,6 +41,10 @@ CREATE TABLE target_table (
     metadata JSONB
 );
 ```
+
+The table needs a primary key: validation looks rows up by it, and upsert mode uses it for
+`ON CONFLICT` unless `onConflictColumns` names other columns. Columns that exist only in
+PostgreSQL are left out of the insert, so their defaults apply.
 
 ### 2. Configure CDM
 
@@ -98,14 +103,14 @@ spark-submit \
 | `spark.cdm.connect.target.postgres.upsertMode` | `insert` or `upsert` | `upsert` |
 | `spark.cdm.connect.target.postgres.onConflictColumns` | Columns for ON CONFLICT | (primary key) |
 | `spark.cdm.connect.target.postgres.transactionSize` | Records per transaction | `5000` |
-| `spark.cdm.connect.target.postgres.isolationLevel` | Transaction isolation | `READ_COMMITTED` |
+| `spark.cdm.connect.target.postgres.isolationLevel` | Transaction isolation (not read yet) | `READ_COMMITTED` |
 
 ### Type Handling
 
 | Property | Description | Default |
 |----------|-------------|---------|
-| `spark.cdm.connect.target.postgres.mapToJsonb` | Convert MAP to JSONB | `true` |
-| `spark.cdm.connect.target.postgres.udtToJsonb` | Convert UDT to JSONB | `true` |
+| `spark.cdm.connect.target.postgres.mapToJsonb` | Convert MAP to JSONB (not read yet: maps always become JSONB) | `true` |
+| `spark.cdm.connect.target.postgres.udtToJsonb` | Convert UDT to JSONB (not read yet: UDTs always become JSONB) | `true` |
 
 ## Type Mapping
 
@@ -210,6 +215,16 @@ spark.cdm.connect.target.postgres.transactionSize=10000
 spark.cdm.connect.target.postgres.transactionSize=1000
 ```
 
+## Failure Handling
+
+Any error fails the whole partition: a batch PostgreSQL rejects, a value that cannot be converted
+(for example NaN in a map, which JSONB cannot store) or a Cassandra read error. The rows not yet
+committed are rolled back; rows committed by earlier transactions in the same partition stay.
+`WRITE` counts committed rows only, and the partition is reported FAIL, so a rerun picks it up.
+
+With `upsertMode=insert`, the rerun of a partly committed partition fails again on the rows
+already there. Use `upsert` when you expect reruns.
+
 ## Validation Mode
 
 Run validation to compare Cassandra and PostgreSQL data:
@@ -220,6 +235,14 @@ spark-submit \
   cassandra-data-migrator.jar \
   cdm-postgres.properties
 ```
+
+The compare runs in PostgreSQL. Each origin value is converted as the migration would write it and
+tested with `IS NOT DISTINCT FROM`, so a row is valid exactly when writing it again would not
+change it. Columns that exist only in PostgreSQL are not compared.
+
+A column whose type has no equality operator with the written value fails validation with an SQL
+error. That covers `json` (use `jsonb`) and CQL types that reach the column type only through an
+assignment cast, such as `uuid` into `text`.
 
 ### Auto-Correction
 
@@ -232,6 +255,9 @@ spark.cdm.autocorrect.missing=true
 # Update mismatched records
 spark.cdm.autocorrect.mismatch=true
 ```
+
+Corrections are written in the partition's transaction, and `CORRECTED_MISSING` and
+`CORRECTED_MISMATCH` count them only once it commits.
 
 ## Troubleshooting
 
@@ -273,9 +299,10 @@ spark.cdm.autocorrect.mismatch=true
 - Check for filtering conditions
 
 **Mismatched records:**
+- Each `Mismatch row found` log line lists the columns that differ, with both values
 - Verify type mapping is correct
-- Check for timestamp timezone issues
-- For numeric types, verify precision handling
+- A column with a fixed scale, such as `NUMERIC(10,2)`, stores a rounded value, so an origin value
+  with more digits differs on every run
 
 ## Best Practices
 

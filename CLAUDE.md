@@ -97,6 +97,14 @@ PostgreSQL target:
 - There is no target `CqlTable`, so the Postgres sessions pass the origin table as its own
   "other" table (`setOtherCqlTable(origin)`) and as the `PKFactory` target. `PKFactory` reads the
   corresponding indexes on every row, so both calls are needed.
+- Any error fails the partition. `PostgresUpsertStatement.close()` rolls back uncommitted rows
+  before it restores autocommit, so the sessions need no rollback code of their own. `WRITE` and
+  `CORRECTED_*` count committed rows only.
+- `cql/statement/PostgresColumnMapping` holds the columns present on both sides. The upsert writes
+  only those, so PostgreSQL defaults apply to the rest.
+- Validation compares in PostgreSQL (`PostgresSelectByPKStatement.findMismatches`): each origin
+  value is bound as the upsert binds it and tested with `IS NOT DISTINCT FROM`. Keep comparisons
+  there rather than in Java.
 - Features are only initialized when there is a Cassandra target (`AbstractJobSession`), so on
   this path `ConstantColumns`, `ExplodeMap`, `ExtractJson` and `WritetimeTTL` are off, and
   `spark.cdm.filter.cassandra.whereCondition` must start with `AND`.
