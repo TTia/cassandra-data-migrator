@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import com.datastax.cdm.properties.IPropertyHelper;
 import com.datastax.cdm.properties.KnownProperties;
+import com.datastax.cdm.properties.PropertyHelper;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -90,7 +91,7 @@ public class PostgresConnectionFactory implements AutoCloseable {
         config.setPoolName("CDM-PostgreSQL-Pool");
 
         logger.info("Creating PostgreSQL connection pool: url={}, schema={}, table={}, poolSize={}",
-                maskPassword(jdbcUrl), schema, table, config.getMaximumPoolSize());
+                PropertyHelper.maskPassword(jdbcUrl), schema, table, config.getMaximumPoolSize());
 
         this.dataSource = new HikariDataSource(config);
     }
@@ -105,11 +106,6 @@ public class PostgresConnectionFactory implements AutoCloseable {
      */
     public Connection getConnection() throws SQLException {
         return dataSource.getConnection();
-    }
-
-    // The URL may carry the password as a query parameter, so it is masked before it is logged
-    static String maskPassword(String jdbcUrl) {
-        return jdbcUrl.replaceAll("(?i)(password=)[^&;]*", "$1***");
     }
 
     /**

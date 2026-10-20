@@ -72,12 +72,6 @@ public class PostgresConnectionFactoryTest {
     }
 
     @Test
-    public void maskPassword_hidesOnlyThePassword() {
-        assertEquals("jdbc:postgresql://db:5432/cdm?user=cdm&password=***&ssl=true", PostgresConnectionFactory
-                .maskPassword("jdbc:postgresql://db:5432/cdm?user=cdm&password=s3cret&ssl=true"));
-    }
-
-    @Test
     public void constructor_validConfiguration_createsFactory() {
         when(propertyHelper.getString(KnownProperties.PG_JDBC_URL)).thenReturn(postgres.getJdbcUrl());
         when(propertyHelper.getString(KnownProperties.PG_USERNAME)).thenReturn(postgres.getUsername());
