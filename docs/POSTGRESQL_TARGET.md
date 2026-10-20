@@ -43,8 +43,10 @@ CREATE TABLE target_table (
 ```
 
 The table needs a primary key: validation looks rows up by it, and upsert mode uses it for
-`ON CONFLICT` unless `onConflictColumns` names other columns. Columns that exist only in
-PostgreSQL are left out of the insert, so their defaults apply.
+`ON CONFLICT` unless `onConflictColumns` names other columns. Every primary key column must also
+be a key column of the Cassandra table, so validation refuses to start on a key PostgreSQL
+generates, such as a `bigserial` id. Columns that exist only in PostgreSQL are left out of the
+insert, so their defaults apply.
 
 ### 2. Configure CDM
 
@@ -257,7 +259,8 @@ spark.cdm.autocorrect.mismatch=true
 ```
 
 Corrections are written in the partition's transaction, and `CORRECTED_MISSING` and
-`CORRECTED_MISMATCH` count them only once it commits.
+`CORRECTED_MISMATCH` count them only once it commits. They use the configured `upsertMode`, so
+with `upsertMode=insert` a mismatch correction fails the partition on the duplicate key.
 
 ## Troubleshooting
 
