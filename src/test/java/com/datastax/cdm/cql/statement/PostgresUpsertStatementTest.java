@@ -215,16 +215,6 @@ public class PostgresUpsertStatementTest {
     }
 
     @Test
-    public void clearBatch_clearsCount() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
-                propertyHelper);
-        statement.initialize(connection);
-        statement.clearBatch();
-
-        assertEquals(0, statement.getCurrentBatchCount());
-    }
-
-    @Test
     public void commit_commitsTransaction() throws SQLException {
         // After initialize, autoCommit should be false for commit to work
         when(connection.getAutoCommit()).thenReturn(false);
@@ -236,20 +226,6 @@ public class PostgresUpsertStatementTest {
         statement.commit();
 
         verify(connection).commit();
-    }
-
-    @Test
-    public void rollback_rollsBackTransaction() throws SQLException {
-        // After initialize, autoCommit should be false for rollback to work
-        when(connection.getAutoCommit()).thenReturn(false);
-
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
-                propertyHelper);
-        statement.initialize(connection);
-
-        statement.rollback();
-
-        verify(connection).rollback();
     }
 
     @Test
@@ -273,17 +249,6 @@ public class PostgresUpsertStatementTest {
         statement.close();
 
         verify(connection, atLeast(1)).setAutoCommit(true);
-    }
-
-    @Test
-    public void setAutoCommit_setsOnConnection() throws SQLException {
-        PostgresUpsertStatement statement = new PostgresUpsertStatement(targetTable, originTable, typeMapper,
-                propertyHelper);
-        statement.initialize(connection);
-
-        statement.setAutoCommit(true);
-
-        verify(connection, atLeastOnce()).setAutoCommit(true);
     }
 
     @Test

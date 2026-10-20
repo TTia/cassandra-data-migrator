@@ -169,19 +169,6 @@ public class PostgresUpsertStatement {
     }
 
     /**
-     * Clears the current batch without executing.
-     *
-     * @throws SQLException
-     *             if clearing fails
-     */
-    public void clearBatch() throws SQLException {
-        if (preparedStatement != null) {
-            preparedStatement.clearBatch();
-        }
-        currentBatchCount = 0;
-    }
-
-    /**
      * Commits the current transaction.
      *
      * @throws SQLException
@@ -192,20 +179,6 @@ public class PostgresUpsertStatement {
             connection.commit();
             totalRecordsInTransaction = 0;
             logger.debug("Transaction committed");
-        }
-    }
-
-    /**
-     * Rolls back the current transaction.
-     *
-     * @throws SQLException
-     *             if rollback fails
-     */
-    public void rollback() throws SQLException {
-        if (connection != null && !connection.getAutoCommit()) {
-            connection.rollback();
-            totalRecordsInTransaction = 0;
-            logger.debug("Transaction rolled back");
         }
     }
 
@@ -225,22 +198,6 @@ public class PostgresUpsertStatement {
      */
     public boolean shouldCommit() {
         return totalRecordsInTransaction >= transactionSize;
-    }
-
-    /**
-     * Sets auto-commit mode.
-     *
-     * @param autoCommit
-     *            the auto-commit setting
-     *
-     * @throws SQLException
-     *             if setting fails
-     */
-    public void setAutoCommit(boolean autoCommit) throws SQLException {
-        this.autoCommit = autoCommit;
-        if (connection != null) {
-            connection.setAutoCommit(autoCommit);
-        }
     }
 
     /**
