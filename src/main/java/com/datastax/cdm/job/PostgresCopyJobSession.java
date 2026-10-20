@@ -138,41 +138,23 @@ public class PostgresCopyJobSession extends AbstractJobSession<PartitionRange> {
                         continue;
                     }
 
+                    // Any failure leaves this loop: a failed batch aborts the transaction, so nothing after it can land
                     for (Record r : pkFactory.toValidRecordList(record)) {
-                        try {
-                            rateLimiterTarget.acquire(1);
-                            upsertStatement.addToBatch(r);
-                            jobCounter.increment(JobCounter.CounterType.UNFLUSHED);
+                        rateLimiterTarget.acquire(1);
+                        upsertStatement.addToBatch(r);
+                        jobCounter.increment(JobCounter.CounterType.UNFLUSHED);
 
-                            // Execute batch if size threshold reached
-                            if (upsertStatement.shouldExecuteBatch()) {
-                                upsertStatement.executeBatch();
-                                jobCounter.increment(JobCounter.CounterType.WRITE,
-                                        jobCounter.getCount(JobCounter.CounterType.UNFLUSHED, true));
-                                jobCounter.reset(JobCounter.CounterType.UNFLUSHED);
-
-                                // Commit if transaction size threshold reached
-                                if (upsertStatement.shouldCommit()) {
-                                    upsertStatement.commit();
-                                }
+                        if (upsertStatement.shouldExecuteBatch()) {
+                            upsertStatement.executeBatch();
+                            if (upsertStatement.shouldCommit()) {
+                                commit(upsertStatement, jobCounter);
                             }
-                        } catch (SQLException e) {
-                            logger.error("Error writing record to PostgreSQL: {}", e.getMessage());
-                            jobCounter.increment(JobCounter.CounterType.ERROR);
                         }
                     }
                 }
 
-                // Flush remaining batch
-                if (upsertStatement.getCurrentBatchCount() > 0) {
-                    upsertStatement.executeBatch();
-                    jobCounter.increment(JobCounter.CounterType.WRITE,
-                            jobCounter.getCount(JobCounter.CounterType.UNFLUSHED, true));
-                    jobCounter.reset(JobCounter.CounterType.UNFLUSHED);
-                }
-
-                // Final commit
-                upsertStatement.commit();
+                upsertStatement.executeBatch();
+                commit(upsertStatement, jobCounter);
 
                 jobCounter.increment(JobCounter.CounterType.PARTITIONS_PASSED);
                 jobCounter.flush();
@@ -180,15 +162,8 @@ public class PostgresCopyJobSession extends AbstractJobSession<PartitionRange> {
                 if (null != trackRunFeature) {
                     trackRunFeature.updateCdmRun(runId, min, TrackRun.RUN_STATUS.PASS, jobCounter.getMetrics());
                 }
-            } catch (SQLException e) {
-                // Rollback on error
-                try {
-                    upsertStatement.rollback();
-                } catch (SQLException rollbackEx) {
-                    logger.error("Error rolling back transaction", rollbackEx);
-                }
-                throw e;
             } finally {
+                // Rolls back whatever was not committed when the partition failed
                 try {
                     upsertStatement.close();
                 } catch (SQLException e) {
@@ -210,6 +185,13 @@ public class PostgresCopyJobSession extends AbstractJobSession<PartitionRange> {
                 trackRunFeature.updateCdmRun(runId, min, TrackRun.RUN_STATUS.FAIL, jobCounter.getMetrics());
             }
         }
+    }
+
+    // WRITE counts committed rows only, so a failed partition reports exactly what reached the target
+    private static void commit(PostgresUpsertStatement upsertStatement, JobCounter jobCounter) throws SQLException {
+        upsertStatement.commit();
+        jobCounter.increment(JobCounter.CounterType.WRITE, jobCounter.getCount(JobCounter.CounterType.UNFLUSHED, true));
+        jobCounter.reset(JobCounter.CounterType.UNFLUSHED);
     }
 
     /**

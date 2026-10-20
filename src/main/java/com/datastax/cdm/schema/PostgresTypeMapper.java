@@ -680,8 +680,9 @@ public class PostgresTypeMapper {
             byte[] bytes = convertBlob((ByteBuffer) value);
             return java.util.Base64.getEncoder().encodeToString(bytes);
         }
-        if (value instanceof Instant) {
-            return ((Instant) value).toString();
+        // ISO strings for Instant, LocalDate and LocalTime; Gson cannot reflect into java.time on JDK 16+
+        if (value instanceof java.time.temporal.TemporalAccessor) {
+            return value.toString();
         }
         if (value instanceof UUID || value instanceof BigInteger || value instanceof BigDecimal
                 || value instanceof InetAddress || value instanceof CqlDuration) {

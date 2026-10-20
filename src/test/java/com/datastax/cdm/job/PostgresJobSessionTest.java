@@ -27,6 +27,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.spark.SparkConf;
@@ -49,7 +50,8 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
- * Runs the PostgreSQL copy and diff sessions end to end: a real Cassandra origin, a real PostgreSQL target.
+ * Runs the PostgreSQL copy and diff sessions end to end: a real Cassandra origin, a real PostgreSQL target. batchSize=2
+ * and transactionSize=2, so a handful of rows already crosses batch and commit boundaries.
  */
 @Testcontainers(disabledWithoutDocker = true)
 public class PostgresJobSessionTest {
@@ -59,6 +61,8 @@ public class PostgresJobSessionTest {
     private static final Instant OUT_OF_FILTER = Instant.parse("2026-09-10T00:00:00Z");
     private static final int ROWS_PER_DEVICE_IN_FILTER = 3;
     private static final String[] DEVICES = { "dev-1", "dev-2" };
+    // 2^53 + 1: the nearest double is 2^53, so a double comparison cannot tell it from 2^53
+    private static final long BIG = 9007199254740993L;
 
     @Container
     static GenericContainer<?> cassandra = new GenericContainer<>(DockerImageName.parse("cassandra:4.1"))
@@ -72,7 +76,6 @@ public class PostgresJobSessionTest {
                     .withUsername("testuser").withPassword("testpass");
 
     private static CqlSession cql;
-    private static PropertyHelper propertyHelper;
     private static PostgresConnectionFactory connectionFactory;
 
     @BeforeAll
@@ -84,27 +87,30 @@ public class PostgresJobSessionTest {
         cql.execute("CREATE TABLE ks.readings (device text, ts timestamp, value int, PRIMARY KEY (device, ts))");
         for (String device : DEVICES) {
             for (int i = 0; i < ROWS_PER_DEVICE_IN_FILTER; i++) {
-                insert(device, DAY_START.plus(Duration.ofHours(i)), i);
+                cql.execute(SimpleStatement.newInstance("INSERT INTO ks.readings (device, ts, value) VALUES (?, ?, ?)",
+                        device, DAY_START.plus(Duration.ofHours(i)), i));
             }
-            insert(device, OUT_OF_FILTER, 99);
+            cql.execute(SimpleStatement.newInstance("INSERT INTO ks.readings (device, ts, value) VALUES (?, ?, ?)",
+                    device, OUT_OF_FILTER, 99));
         }
 
-        try (Connection connection = postgres.createConnection(""); Statement stmt = connection.createStatement()) {
-            stmt.execute(
-                    "CREATE TABLE readings (device TEXT, ts TIMESTAMPTZ, value INTEGER, PRIMARY KEY (device, ts))");
+        cql.execute("CREATE TYPE ks.period (starts date, label text)");
+        cql.execute("CREATE TABLE ks.typed (id int PRIMARY KEY, tags list<text>, codes set<int>, counts map<text, int>,"
+                + " period frozen<period>, addr inet, big bigint, amount decimal, day date, at time,"
+                + " scores map<text, double>)");
+        for (int id = 1; id <= 2; id++) {
+            cql.execute("INSERT INTO ks.typed (id, tags, codes, counts, period, addr, big, amount, day, at, scores)"
+                    + " VALUES (" + id + ", ['a', 'b'], {3, 1}, {'k': 1}, {starts: '2026-09-01', label: 'q3'},"
+                    + " '10.0.0.1', " + BIG + ", 12.50, '2026-09-01', '08:30:00.123456789', {'s': 1.5})");
         }
 
-        PropertyHelper.destroyInstance();
-        SparkConf conf = new SparkConf().set("spark.cdm.schema.origin.keyspaceTable", "ks.readings")
-                .set("spark.cdm.filter.cassandra.whereCondition", "AND ts < '2026-09-02 00:00:00+0000'")
-                .set("spark.cdm.connect.target.type", "postgres")
-                .set("spark.cdm.connect.target.postgres.url", postgres.getJdbcUrl())
-                .set("spark.cdm.connect.target.postgres.username", postgres.getUsername())
-                .set("spark.cdm.connect.target.postgres.password", postgres.getPassword())
-                .set("spark.cdm.connect.target.postgres.table", "readings")
-                .set("spark.cdm.connect.target.postgres.pool.size", "2");
-        propertyHelper = PropertyHelper.getInstance(conf);
-        connectionFactory = new PostgresConnectionFactory(propertyHelper);
+        pg("CREATE TABLE readings (device TEXT, ts TIMESTAMPTZ, value INTEGER, PRIMARY KEY (device, ts))");
+        // Mixed-case name and a PostgreSQL-only column with a default
+        pg("CREATE TABLE \"Typed\" (id INTEGER PRIMARY KEY, tags TEXT[], codes INTEGER[], counts JSONB, period JSONB,"
+                + " addr INET, big BIGINT, amount NUMERIC, day DATE, at TIME, scores JSONB,"
+                + " ingested_at TIMESTAMPTZ NOT NULL DEFAULT now())");
+
+        connectionFactory = new PostgresConnectionFactory(readings());
     }
 
     @AfterAll
@@ -117,41 +123,129 @@ public class PostgresJobSessionTest {
     }
 
     @BeforeEach
-    void truncateTarget() throws SQLException {
-        try (Connection connection = postgres.createConnection(""); Statement stmt = connection.createStatement()) {
-            stmt.execute("TRUNCATE readings");
-        }
+    void truncateTargets() throws SQLException {
+        pg("TRUNCATE readings, \"Typed\"");
     }
 
     @Test
     void migrate_copiesFilteredRowsWithExactTimestamps() throws SQLException {
-        PartitionRange range = migrate();
+        JobCounter counter = migrate(readings()).getJobCounter();
 
-        assertEquals(expectedRows(), targetRows());
-        assertEquals(expectedRows().size(), range.getJobCounter().getCount(CounterType.WRITE));
+        assertEquals(expectedReadings(), targetReadings());
+        assertEquals(expectedReadings().size(), counter.getCount(CounterType.WRITE));
+        assertEquals(1, counter.getCount(CounterType.PARTITIONS_PASSED));
     }
 
     @Test
-    void validate_reportsMissingRowsBeforeMigrationAndValidRowsAfter() {
-        JobCounter before = validate().getJobCounter();
-        assertEquals(expectedRows().size(), before.getCount(CounterType.MISSING));
+    void migrate_failingBatch_failsPartitionAndCountsOnlyCommittedRows() throws SQLException {
+        pg("ALTER TABLE readings ADD CONSTRAINT no_two CHECK (value <> 2)");
+        try {
+            JobCounter counter = migrate(readings()).getJobCounter();
+
+            assertEquals(1, counter.getCount(CounterType.PARTITIONS_FAILED));
+            assertEquals(0, counter.getCount(CounterType.PARTITIONS_PASSED));
+            assertEquals(targetReadings().size(), counter.getCount(CounterType.WRITE));
+            assertEquals(counter.getCount(CounterType.READ) - counter.getCount(CounterType.WRITE),
+                    counter.getCount(CounterType.ERROR));
+        } finally {
+            pg("ALTER TABLE readings DROP CONSTRAINT no_two");
+        }
+    }
+
+    @Test
+    void validate_reportsMissingRowsBeforeMigrationAndValidRowsAfter() throws SQLException {
+        JobCounter before = validate(readings()).getJobCounter();
+        assertEquals(expectedReadings().size(), before.getCount(CounterType.MISSING));
         assertEquals(0, before.getCount(CounterType.VALID));
 
-        migrate();
+        migrate(readings());
 
-        JobCounter after = validate().getJobCounter();
-        assertEquals(expectedRows().size(), after.getCount(CounterType.VALID));
+        JobCounter after = validate(readings()).getJobCounter();
+        assertEquals(expectedReadings().size(), after.getCount(CounterType.VALID));
         assertEquals(0, after.getCount(CounterType.MISSING));
         assertEquals(0, after.getCount(CounterType.MISMATCH));
     }
 
-    private static PartitionRange migrate() {
+    @Test
+    void validate_withAutocorrect_restoresMismatchedAndMissingRows() throws SQLException {
+        migrate(readings());
+        pg("UPDATE readings SET value = 42 WHERE device = 'dev-1' AND value = 0");
+        pg("DELETE FROM readings WHERE device = 'dev-2' AND value = 0");
+
+        JobCounter counter = validate(
+                readings("spark.cdm.autocorrect.missing", "true", "spark.cdm.autocorrect.mismatch", "true"))
+                        .getJobCounter();
+
+        assertEquals(1, counter.getCount(CounterType.MISMATCH));
+        assertEquals(1, counter.getCount(CounterType.MISSING));
+        assertEquals(1, counter.getCount(CounterType.CORRECTED_MISMATCH));
+        assertEquals(1, counter.getCount(CounterType.CORRECTED_MISSING));
+        assertEquals(expectedReadings(), targetReadings());
+    }
+
+    @Test
+    void typedColumns_migrate_writesEveryColumnAndKeepsPostgresDefaults() throws SQLException {
+        JobCounter migrated = migrate(typed()).getJobCounter();
+
+        assertEquals(1, migrated.getCount(CounterType.PARTITIONS_PASSED));
+        assertEquals(2, migrated.getCount(CounterType.WRITE));
+        assertEquals(2, count("SELECT count(*) FROM \"Typed\" WHERE ingested_at IS NOT NULL"
+                + " AND period = '{\"starts\": \"2026-09-01\", \"label\": \"q3\"}'"));
+    }
+
+    @Test
+    void migrate_valueThatCannotBeConverted_failsPartitionInsteadOfWritingNull() throws SQLException {
+        // jsonb cannot store NaN. The cast picks the positional overload over the named-values Map one
+        cql.execute(SimpleStatement.newInstance("INSERT INTO ks.typed (id, scores) VALUES (3, ?)",
+                (Object) Collections.singletonMap("s", Double.NaN)));
+        try {
+            JobCounter counter = migrate(typed()).getJobCounter();
+
+            assertEquals(1, counter.getCount(CounterType.PARTITIONS_FAILED));
+            assertEquals(0, count("SELECT count(*) FROM \"Typed\" WHERE id = 3"));
+            assertEquals(count("SELECT count(*) FROM \"Typed\""), counter.getCount(CounterType.WRITE));
+        } finally {
+            cql.execute("DELETE FROM ks.typed WHERE id = 3");
+        }
+    }
+
+    private static PropertyHelper readings(String... extra) {
+        String[] filtered = new String[extra.length + 2];
+        filtered[0] = "spark.cdm.filter.cassandra.whereCondition";
+        filtered[1] = "AND ts < '2026-09-02 00:00:00+0000'";
+        System.arraycopy(extra, 0, filtered, 2, extra.length);
+        return properties("ks.readings", "readings", filtered);
+    }
+
+    private static PropertyHelper typed() {
+        return properties("ks.typed", "Typed");
+    }
+
+    // PropertyHelper loads its SparkConf only once, so each configuration needs a fresh instance
+    private static PropertyHelper properties(String keyspaceTable, String pgTable, String... extra) {
+        SparkConf conf = new SparkConf().set("spark.cdm.schema.origin.keyspaceTable", keyspaceTable)
+                .set("spark.cdm.connect.target.type", "postgres")
+                .set("spark.cdm.connect.target.postgres.url", postgres.getJdbcUrl())
+                .set("spark.cdm.connect.target.postgres.username", postgres.getUsername())
+                .set("spark.cdm.connect.target.postgres.password", postgres.getPassword())
+                .set("spark.cdm.connect.target.postgres.table", pgTable)
+                .set("spark.cdm.connect.target.postgres.pool.size", "2")
+                .set("spark.cdm.connect.target.postgres.batchSize", "2")
+                .set("spark.cdm.connect.target.postgres.transactionSize", "2");
+        for (int i = 0; i < extra.length; i += 2) {
+            conf.set(extra[i], extra[i + 1]);
+        }
+        PropertyHelper.destroyInstance();
+        return PropertyHelper.getInstance(conf);
+    }
+
+    private static PartitionRange migrate(PropertyHelper propertyHelper) {
         PartitionRange range = fullRange(JobType.MIGRATE);
         new PostgresCopyJobSession(cql, connectionFactory, propertyHelper).processPartitionRange(range);
         return range;
     }
 
-    private static PartitionRange validate() {
+    private static PartitionRange validate(PropertyHelper propertyHelper) {
         PartitionRange range = fullRange(JobType.VALIDATE);
         new PostgresDiffJobSession(cql, connectionFactory, propertyHelper).processPartitionRange(range);
         return range;
@@ -161,12 +255,21 @@ public class PostgresJobSessionTest {
         return new PartitionRange(BigInteger.valueOf(Long.MIN_VALUE), BigInteger.valueOf(Long.MAX_VALUE), jobType);
     }
 
-    private static void insert(String device, Instant ts, int value) {
-        cql.execute(SimpleStatement.newInstance("INSERT INTO ks.readings (device, ts, value) VALUES (?, ?, ?)", device,
-                ts, value));
+    private static void pg(String sql) throws SQLException {
+        try (Connection connection = postgres.createConnection(""); Statement stmt = connection.createStatement()) {
+            stmt.execute(sql);
+        }
     }
 
-    private static List<String> expectedRows() {
+    private static long count(String sql) throws SQLException {
+        try (Connection connection = postgres.createConnection(""); Statement stmt = connection.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+            rs.next();
+            return rs.getLong(1);
+        }
+    }
+
+    private static List<String> expectedReadings() {
         List<String> rows = new ArrayList<>();
         for (String device : DEVICES) {
             for (int i = 0; i < ROWS_PER_DEVICE_IN_FILTER; i++) {
@@ -176,7 +279,7 @@ public class PostgresJobSessionTest {
         return rows;
     }
 
-    private static List<String> targetRows() throws SQLException {
+    private static List<String> targetReadings() throws SQLException {
         List<String> rows = new ArrayList<>();
         try (Connection connection = postgres.createConnection(""); Statement stmt = connection.createStatement();
                 ResultSet rs = stmt.executeQuery("SELECT device, ts, value FROM readings ORDER BY device, ts")) {

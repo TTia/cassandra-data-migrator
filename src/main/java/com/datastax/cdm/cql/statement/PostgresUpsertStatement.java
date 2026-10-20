@@ -18,14 +18,11 @@ package com.datastax.cdm.cql.statement;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.datastax.cdm.data.EnhancedPK;
 import com.datastax.cdm.data.Record;
 import com.datastax.cdm.properties.IPropertyHelper;
 import com.datastax.cdm.properties.KnownProperties;
@@ -33,22 +30,17 @@ import com.datastax.cdm.schema.CqlTable;
 import com.datastax.cdm.schema.PostgresTable;
 import com.datastax.cdm.schema.PostgresTypeMapper;
 import com.datastax.oss.driver.api.core.cql.Row;
-import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
- * Builds and executes PostgreSQL INSERT/UPSERT statements for migrating data from Cassandra. Supports batch execution,
- * transaction management, and retry logic.
+ * Builds and executes PostgreSQL INSERT/UPSERT statements for migrating data from Cassandra. Supports batch execution
+ * and transaction management. A failed batch is not retried: the caller fails the partition and CDM reruns it.
  */
 public class PostgresUpsertStatement {
 
     private static final Logger logger = LoggerFactory.getLogger(PostgresUpsertStatement.class);
     private static final int DEFAULT_BATCH_SIZE = 1000;
-    private static final int DEFAULT_RETRY_ATTEMPTS = 3;
-    private static final long INITIAL_RETRY_DELAY_MS = 100;
 
     private final PostgresTable targetTable;
-    private final CqlTable originTable;
-    private final PostgresTypeMapper typeMapper;
     private final IPropertyHelper propertyHelper;
 
     private final String insertStatement;
@@ -58,10 +50,8 @@ public class PostgresUpsertStatement {
     private final int transactionSize;
     private final List<String> onConflictColumns;
 
-    // Column mapping
-    private final List<String> targetColumnNames;
-    private final List<DataType> originColumnTypes;
-    private final List<Integer> columnMapping; // origin index -> target column position
+    private final PostgresColumnMapping mapping;
+    private final List<String> columns;
 
     // Batch state
     private Connection connection;
@@ -85,8 +75,6 @@ public class PostgresUpsertStatement {
     public PostgresUpsertStatement(PostgresTable targetTable, CqlTable originTable, PostgresTypeMapper typeMapper,
             IPropertyHelper propertyHelper) {
         this.targetTable = targetTable;
-        this.originTable = originTable;
-        this.typeMapper = typeMapper;
         this.propertyHelper = propertyHelper;
 
         // Load configuration
@@ -102,10 +90,14 @@ public class PostgresUpsertStatement {
         List<String> conflictCols = propertyHelper.getStringList(KnownProperties.PG_ON_CONFLICT_COLUMNS);
         this.onConflictColumns = conflictCols != null ? conflictCols : targetTable.getPrimaryKeyColumns();
 
-        // Build column mapping
-        this.targetColumnNames = new ArrayList<>(targetTable.getColumnNames());
-        this.originColumnTypes = originTable.getColumnCqlTypes();
-        this.columnMapping = buildColumnMapping();
+        this.mapping = new PostgresColumnMapping(targetTable, originTable, typeMapper);
+        this.columns = mapping.getColumns();
+        if (useUpsert && (onConflictColumns.isEmpty() || !columns.containsAll(onConflictColumns))) {
+            throw new IllegalStateException("Cannot upsert into " + targetTable.getQualifiedTableName()
+                    + ": the conflict columns " + onConflictColumns + " must be non-empty and exist in the origin"
+                    + " table. Set " + KnownProperties.PG_ON_CONFLICT_COLUMNS + ", or " + KnownProperties.PG_UPSERT_MODE
+                    + "=insert");
+        }
 
         // Build SQL statements
         this.insertStatement = buildInsertStatement();
@@ -142,24 +134,21 @@ public class PostgresUpsertStatement {
      *            the record to bind
      *
      * @throws SQLException
-     *             if binding fails
+     *             if binding fails, including a value that cannot be converted
      */
     public void addToBatch(Record record) throws SQLException {
         if (preparedStatement == null) {
             throw new IllegalStateException("Statement not initialized. Call initialize() first.");
         }
 
-        Row originRow = record.getOriginRow();
-        EnhancedPK pk = record.getPk();
-
-        bindRecord(originRow, pk);
+        bindRecord(record.getOriginRow());
         preparedStatement.addBatch();
         currentBatchCount++;
         totalRecordsInTransaction++;
     }
 
     /**
-     * Executes the current batch of statements.
+     * Executes the current batch of statements. The batch is cleared whether or not it succeeds.
      *
      * @return array of update counts
      *
@@ -171,11 +160,12 @@ public class PostgresUpsertStatement {
             return new int[0];
         }
 
-        int[] results = executeBatchWithRetry();
-        preparedStatement.clearBatch();
-        currentBatchCount = 0;
-
-        return results;
+        try {
+            return preparedStatement.executeBatch();
+        } finally {
+            preparedStatement.clearBatch();
+            currentBatchCount = 0;
+        }
     }
 
     /**
@@ -281,7 +271,7 @@ public class PostgresUpsertStatement {
     }
 
     /**
-     * Closes the prepared statement.
+     * Closes the prepared statement, rolls back anything not committed, then restores the auto-commit mode.
      *
      * @throws SQLException
      *             if closing fails
@@ -292,46 +282,32 @@ public class PostgresUpsertStatement {
             preparedStatement = null;
         }
         if (connection != null) {
+            // Uncommitted rows at this point belong to a failed partition; restoring auto-commit would commit them
+            if (!connection.getAutoCommit()) {
+                connection.rollback();
+            }
             connection.setAutoCommit(autoCommit);
         }
     }
 
     // ==================== Private Methods ====================
 
-    private List<Integer> buildColumnMapping() {
-        List<String> originColNames = originTable.getColumnNames(false);
-        List<Integer> mapping = new ArrayList<>();
-
-        for (String targetColName : targetColumnNames) {
-            int originIndex = -1;
-            for (int i = 0; i < originColNames.size(); i++) {
-                if (originColNames.get(i).equalsIgnoreCase(targetColName)) {
-                    originIndex = i;
-                    break;
-                }
-            }
-            mapping.add(originIndex);
-        }
-
-        return mapping;
-    }
-
     private String buildInsertStatement() {
         StringBuilder sql = new StringBuilder();
         sql.append("INSERT INTO ").append(targetTable.getQualifiedTableName()).append(" (");
 
         // Column list
-        for (int i = 0; i < targetColumnNames.size(); i++) {
+        for (int i = 0; i < columns.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
             }
-            sql.append(quoteIdentifier(targetColumnNames.get(i)));
+            sql.append(PostgresTable.quoteIdentifier(columns.get(i)));
         }
 
         sql.append(") VALUES (");
 
         // Parameter placeholders
-        for (int i = 0; i < targetColumnNames.size(); i++) {
+        for (int i = 0; i < columns.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
             }
@@ -352,18 +328,18 @@ public class PostgresUpsertStatement {
             if (i > 0) {
                 sql.append(", ");
             }
-            sql.append(quoteIdentifier(onConflictColumns.get(i)));
+            sql.append(PostgresTable.quoteIdentifier(onConflictColumns.get(i)));
         }
         sql.append(") DO UPDATE SET ");
 
         // Build SET clause for non-key columns
         boolean first = true;
-        for (String colName : targetColumnNames) {
+        for (String colName : columns) {
             if (!onConflictColumns.contains(colName)) {
                 if (!first) {
                     sql.append(", ");
                 }
-                String quotedName = quoteIdentifier(colName);
+                String quotedName = PostgresTable.quoteIdentifier(colName);
                 sql.append(quotedName).append(" = EXCLUDED.").append(quotedName);
                 first = false;
             }
@@ -380,154 +356,14 @@ public class PostgresUpsertStatement {
         return sql.toString();
     }
 
-    private void bindRecord(Row originRow, EnhancedPK pk) throws SQLException {
-        int paramIndex = 1;
-
-        for (int targetIdx = 0; targetIdx < targetColumnNames.size(); targetIdx++) {
-            int originIdx = columnMapping.get(targetIdx);
-            Object value = null;
-
-            if (originIdx >= 0 && originIdx < originColumnTypes.size()) {
-                DataType originType = originColumnTypes.get(originIdx);
-
-                // Get value from origin row
-                try {
-                    value = originTable.getAndConvertData(originIdx, originRow);
-                } catch (Exception e) {
-                    logger.warn("Failed to get data for column {} at index {}: {}", targetColumnNames.get(targetIdx),
-                            originIdx, e.getMessage());
-                }
-
-                // Convert to PostgreSQL-compatible value
-                if (value != null) {
-                    try {
-                        value = typeMapper.convertValue(value, originType, connection);
-                    } catch (Exception e) {
-                        logger.warn("Failed to convert value for column {}: {}", targetColumnNames.get(targetIdx),
-                                e.getMessage());
-                        value = null;
-                    }
-                }
-            }
-
-            // Bind the value
+    private void bindRecord(Row originRow) throws SQLException {
+        for (int i = 0; i < columns.size(); i++) {
+            Object value = mapping.value(i, originRow, connection);
             if (value == null) {
-                preparedStatement.setNull(paramIndex, java.sql.Types.NULL);
+                preparedStatement.setNull(i + 1, java.sql.Types.NULL);
             } else {
-                preparedStatement.setObject(paramIndex, value);
+                preparedStatement.setObject(i + 1, value);
             }
-            paramIndex++;
-        }
-    }
-
-    private int[] executeBatchWithRetry() throws SQLException {
-        int attempts = 0;
-        SQLException lastException = null;
-        long delayMs = INITIAL_RETRY_DELAY_MS;
-
-        while (attempts < DEFAULT_RETRY_ATTEMPTS) {
-            try {
-                return preparedStatement.executeBatch();
-            } catch (SQLException e) {
-                lastException = e;
-                String sqlState = e.getSQLState();
-
-                // Check if this is a retryable error
-                if (isRetryableError(sqlState)) {
-                    attempts++;
-                    if (attempts < DEFAULT_RETRY_ATTEMPTS) {
-                        logger.warn("Batch execution failed (attempt {}/{}), retrying in {}ms: {}", attempts,
-                                DEFAULT_RETRY_ATTEMPTS, delayMs, e.getMessage());
-                        try {
-                            Thread.sleep(delayMs);
-                            delayMs *= 2; // Exponential backoff
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw e;
-                        }
-
-                        // Rollback and re-add batch items
-                        rollback();
-                    }
-                } else {
-                    // Non-retryable error
-                    throw e;
-                }
-            }
-        }
-
-        // Max retries exceeded
-        logger.error("Batch execution failed after {} attempts", DEFAULT_RETRY_ATTEMPTS);
-        throw lastException;
-    }
-
-    private boolean isRetryableError(String sqlState) {
-        if (sqlState == null) {
-            return false;
-        }
-
-        // Connection errors (Class 08)
-        if (sqlState.startsWith("08")) {
-            return true;
-        }
-
-        // Transaction rollback errors (Class 40)
-        if (sqlState.startsWith("40")) {
-            return true;
-        }
-
-        // Serialization failure
-        if ("40001".equals(sqlState)) {
-            return true;
-        }
-
-        // Deadlock detected
-        if ("40P01".equals(sqlState)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private String quoteIdentifier(String identifier) {
-        // Use double quotes for PostgreSQL identifiers to preserve case
-        // and handle reserved words
-        return "\"" + identifier.replace("\"", "\"\"") + "\"";
-    }
-
-    /**
-     * PostgreSQL error codes for error handling.
-     */
-    public static class PostgresErrorCode {
-        public static final String UNIQUE_VIOLATION = "23505";
-        public static final String FOREIGN_KEY_VIOLATION = "23503";
-        public static final String NOT_NULL_VIOLATION = "23502";
-        public static final String CONNECTION_EXCEPTION = "08000";
-        public static final String CONNECTION_DOES_NOT_EXIST = "08003";
-        public static final String CONNECTION_FAILURE = "08006";
-        public static final String SERIALIZATION_FAILURE = "40001";
-        public static final String DEADLOCK_DETECTED = "40P01";
-        public static final String DISK_FULL = "53100";
-
-        /**
-         * Checks if the error is a constraint violation that might be resolved by upsert.
-         */
-        public static boolean isConstraintViolation(String sqlState) {
-            return UNIQUE_VIOLATION.equals(sqlState);
-        }
-
-        /**
-         * Checks if the error is fatal and should stop migration.
-         */
-        public static boolean isFatalError(String sqlState) {
-            return DISK_FULL.equals(sqlState);
-        }
-
-        /**
-         * Checks if the error is a connection error.
-         */
-        public static boolean isConnectionError(String sqlState) {
-            return sqlState != null && sqlState.startsWith("08");
         }
     }
 }

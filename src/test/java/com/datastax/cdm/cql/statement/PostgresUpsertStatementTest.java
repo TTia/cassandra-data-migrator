@@ -28,6 +28,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -285,29 +286,58 @@ public class PostgresUpsertStatementTest {
         verify(connection, atLeastOnce()).setAutoCommit(true);
     }
 
-    // ========== Error Code Tests ==========
+    @Test
+    public void close_rollsBackUncommittedWorkBeforeRestoringAutoCommit() throws SQLException {
+        // auto-commit on before initialize, off once the statement has taken over the connection
+        when(connection.getAutoCommit()).thenReturn(true, false);
+
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(
+                targetTable, originTable, typeMapper, propertyHelper);
+        statement.initialize(connection);
+        statement.close();
+
+        InOrder inOrder = inOrder(connection);
+        inOrder.verify(connection).rollback();
+        inOrder.verify(connection).setAutoCommit(true);
+    }
+
+    // ========== Column Mapping Tests ==========
 
     @Test
-    public void postgresErrorCode_isConstraintViolation() {
-        assertTrue(PostgresUpsertStatement.PostgresErrorCode.isConstraintViolation("23505"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isConstraintViolation("23503"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isConstraintViolation(null));
+    public void insert_leavesOutPostgresOnlyColumns() {
+        when(targetTable.getColumnNames()).thenReturn(Arrays.asList("id", "name", "value", "ingested_at"));
+
+        PostgresUpsertStatement statement = new PostgresUpsertStatement(
+                targetTable, originTable, typeMapper, propertyHelper);
+
+        assertFalse(statement.getInsertStatement().contains("ingested_at"));
+        assertTrue(statement.getInsertStatement().contains("VALUES (?, ?, ?)"));
+        assertFalse(statement.getUpsertStatement().contains("ingested_at"));
     }
 
     @Test
-    public void postgresErrorCode_isFatalError() {
-        assertTrue(PostgresUpsertStatement.PostgresErrorCode.isFatalError("53100"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isFatalError("23505"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isFatalError(null));
+    public void upsert_withoutConflictColumns_failsFast() {
+        when(targetTable.getPrimaryKeyColumns()).thenReturn(Collections.emptyList());
+
+        assertThrows(IllegalStateException.class,
+                () -> new PostgresUpsertStatement(targetTable, originTable, typeMapper, propertyHelper));
     }
 
     @Test
-    public void postgresErrorCode_isConnectionError() {
-        assertTrue(PostgresUpsertStatement.PostgresErrorCode.isConnectionError("08000"));
-        assertTrue(PostgresUpsertStatement.PostgresErrorCode.isConnectionError("08003"));
-        assertTrue(PostgresUpsertStatement.PostgresErrorCode.isConnectionError("08006"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isConnectionError("23505"));
-        assertFalse(PostgresUpsertStatement.PostgresErrorCode.isConnectionError(null));
+    public void upsert_withConflictColumnMissingFromOrigin_failsFast() {
+        when(targetTable.getColumnNames()).thenReturn(Arrays.asList("id", "name", "value", "tenant"));
+        when(targetTable.getPrimaryKeyColumns()).thenReturn(Arrays.asList("id", "tenant"));
+
+        assertThrows(IllegalStateException.class,
+                () -> new PostgresUpsertStatement(targetTable, originTable, typeMapper, propertyHelper));
+    }
+
+    @Test
+    public void insertMode_withoutConflictColumns_isAllowed() {
+        when(propertyHelper.getString(KnownProperties.PG_UPSERT_MODE)).thenReturn("insert");
+        when(targetTable.getPrimaryKeyColumns()).thenReturn(Collections.emptyList());
+
+        assertNotNull(new PostgresUpsertStatement(targetTable, originTable, typeMapper, propertyHelper));
     }
 
     // ========== Configuration Tests ==========

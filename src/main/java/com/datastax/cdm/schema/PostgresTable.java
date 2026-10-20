@@ -171,12 +171,20 @@ public class PostgresTable {
     }
 
     /**
-     * Returns the fully qualified table name (schema.table).
+     * Returns the fully qualified, quoted table name ("schema"."table"), ready for SQL. The configured names are used
+     * exactly as written, as the metadata lookup does.
      *
      * @return the qualified table name
      */
     public String getQualifiedTableName() {
-        return schemaName + "." + tableName;
+        return quoteIdentifier(schemaName) + "." + quoteIdentifier(tableName);
+    }
+
+    /**
+     * Quotes a PostgreSQL identifier so that case and reserved words are preserved.
+     */
+    public static String quoteIdentifier(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
     /**

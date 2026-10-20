@@ -216,8 +216,8 @@ public class PostgresDiffJobSession extends AbstractJobSession<PartitionRange> {
                     }
                 }
 
-                // Flush any remaining batch
-                if (upsertStatement != null && upsertStatement.getCurrentBatchCount() > 0) {
+                // Always commit: batches executed mid-loop are not committed yet, and close() rolls them back
+                if (upsertStatement != null) {
                     upsertStatement.executeBatch();
                     upsertStatement.commit();
                 }

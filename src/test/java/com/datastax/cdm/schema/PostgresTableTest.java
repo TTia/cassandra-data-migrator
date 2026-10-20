@@ -44,7 +44,7 @@ public class PostgresTableTest {
 
         assertEquals("test_schema", table.getSchemaName());
         assertEquals("test_table", table.getTableName());
-        assertEquals("test_schema.test_table", table.getQualifiedTableName());
+        assertEquals("\"test_schema\".\"test_table\"", table.getQualifiedTableName());
     }
 
     @Test
