@@ -526,6 +526,12 @@ public class PropertyHelperTest {
         assertFalse(helper.meetsMinimum("a", 1L, 100L));
     }
 
+    @Test
+    public void maskPassword_hidesOnlyThePassword() {
+        assertEquals("jdbc:postgresql://db:5432/cdm?user=cdm&password=***&ssl=true",
+                PropertyHelper.maskPassword("jdbc:postgresql://db:5432/cdm?user=cdm&password=s3cret&ssl=true"));
+    }
+
     private void setValidSparkConf() {
         validSparkConf = new SparkConf();
         validSparkConf.set(KnownProperties.CONNECT_ORIGIN_HOST, "localhost");

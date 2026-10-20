@@ -235,6 +235,8 @@ public final class PropertyHelper extends KnownProperties implements IPropertyHe
                 } else {
                     if (scKey.contains("password"))
                         scValue = "********";
+                    else
+                        scValue = maskPassword(scValue);
                     logger.info("Known property [" + scKey + "] is configured with value [" + scValue
                             + "] and is type [" + propertyType + "]");
                 }
@@ -318,6 +320,11 @@ public final class PropertyHelper extends KnownProperties implements IPropertyHe
         }
 
         return valid;
+    }
+
+    // A JDBC URL may carry the password as a query parameter, so values are masked before they are logged
+    public static String maskPassword(String value) {
+        return value.replaceAll("(?i)(password=)[^&;]*", "$1***");
     }
 
     public static Integer toInteger(Number n) {

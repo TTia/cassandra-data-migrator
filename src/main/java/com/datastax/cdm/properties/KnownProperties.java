@@ -329,6 +329,68 @@ public class KnownProperties {
     }
 
     // ==========================================================================
+    // PostgreSQL Target Connection Properties
+    // ==========================================================================
+    public static final String TARGET_TYPE = "spark.cdm.connect.target.type"; // cassandra or postgres
+
+    // PostgreSQL Connection
+    public static final String PG_JDBC_URL = "spark.cdm.connect.target.postgres.url";
+    public static final String PG_USERNAME = "spark.cdm.connect.target.postgres.username";
+    public static final String PG_PASSWORD = "spark.cdm.connect.target.postgres.password";
+    public static final String PG_SCHEMA = "spark.cdm.connect.target.postgres.schema";
+    public static final String PG_TABLE = "spark.cdm.connect.target.postgres.table";
+
+    // PostgreSQL Pool Configuration
+    public static final String PG_POOL_SIZE = "spark.cdm.connect.target.postgres.pool.size";
+    public static final String PG_POOL_TIMEOUT = "spark.cdm.connect.target.postgres.pool.timeout";
+
+    // PostgreSQL Write Configuration
+    public static final String PG_BATCH_SIZE = "spark.cdm.connect.target.postgres.batchSize";
+    public static final String PG_UPSERT_MODE = "spark.cdm.connect.target.postgres.upsertMode"; // insert or upsert
+    public static final String PG_ON_CONFLICT_COLUMNS = "spark.cdm.connect.target.postgres.onConflictColumns";
+
+    // PostgreSQL Transaction Configuration
+    public static final String PG_TRANSACTION_SIZE = "spark.cdm.connect.target.postgres.transactionSize";
+    public static final String PG_ISOLATION_LEVEL = "spark.cdm.connect.target.postgres.isolationLevel";
+
+    // PostgreSQL Type Handling
+    public static final String PG_MAP_TO_JSONB = "spark.cdm.connect.target.postgres.mapToJsonb";
+    public static final String PG_UDT_TO_JSONB = "spark.cdm.connect.target.postgres.udtToJsonb";
+
+    static {
+        types.put(TARGET_TYPE, PropertyType.STRING);
+        defaults.put(TARGET_TYPE, "cassandra");
+
+        types.put(PG_JDBC_URL, PropertyType.STRING);
+        types.put(PG_USERNAME, PropertyType.STRING);
+        types.put(PG_PASSWORD, PropertyType.STRING);
+        types.put(PG_SCHEMA, PropertyType.STRING);
+        defaults.put(PG_SCHEMA, "public");
+        types.put(PG_TABLE, PropertyType.STRING);
+
+        types.put(PG_POOL_SIZE, PropertyType.NUMBER);
+        defaults.put(PG_POOL_SIZE, "10");
+        types.put(PG_POOL_TIMEOUT, PropertyType.NUMBER);
+        defaults.put(PG_POOL_TIMEOUT, "30000");
+
+        types.put(PG_BATCH_SIZE, PropertyType.NUMBER);
+        defaults.put(PG_BATCH_SIZE, "1000");
+        types.put(PG_UPSERT_MODE, PropertyType.STRING);
+        defaults.put(PG_UPSERT_MODE, "upsert");
+        types.put(PG_ON_CONFLICT_COLUMNS, PropertyType.STRING_LIST);
+
+        types.put(PG_TRANSACTION_SIZE, PropertyType.NUMBER);
+        defaults.put(PG_TRANSACTION_SIZE, "5000");
+        types.put(PG_ISOLATION_LEVEL, PropertyType.STRING);
+        defaults.put(PG_ISOLATION_LEVEL, "READ_COMMITTED");
+
+        types.put(PG_MAP_TO_JSONB, PropertyType.BOOLEAN);
+        defaults.put(PG_MAP_TO_JSONB, "true");
+        types.put(PG_UDT_TO_JSONB, PropertyType.BOOLEAN);
+        defaults.put(PG_UDT_TO_JSONB, "true");
+    }
+
+    // ==========================================================================
     // Properties that configure target TLS
     // ==========================================================================
     public static final String TARGET_TLS_ENABLED = "spark.cdm.connect.target.tls.enabled"; // false
